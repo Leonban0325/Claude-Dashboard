@@ -1,9 +1,12 @@
 // ═══════════════════════════════════════════════════════
-// SECTOR ROTATION TERMINAL v2 — Google Apps Script Backend
+// SECTOR ROTATION TERMINAL v3 — Google Apps Script Backend
 // ═══════════════════════════════════════════════════════
-// WHAT'S NEW:
-//   • Signal Change Detection (_SNAPSHOTS tab, daily diff)
-//   • Sector → Industry Drill-Down (auto-grouped from universe)
+// WHAT'S NEW IN V3:
+//   • SECTOR MAP extended to col O (rotation, breadth, verdict)
+//   • EMERGING extended to col O (percentile, quadrant, rotation, note)
+//   • ROTATION now parses all 3 sections (risk pairs, sector vs SPY, credit)
+//   • CONVICTION label parsed as text (not number)
+//   • Drill-down uses INDUSTRY SCANNER PARENT column (explicit mapping)
 //   • Server-side regime verdict for snapshot consistency
 //
 // SETUP:
@@ -13,14 +16,12 @@
 //      - Event source: Time-driven
 //      - Type: Day timer → 4pm to 5pm (after market close)
 // ═══════════════════════════════════════════════════════
-
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('◈ Sector Rotation Terminal')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
-
 // ═══════════════════════════════════════════════════════
 // MAIN DATA ENDPOINT
 // ═══════════════════════════════════════════════════════
@@ -30,33 +31,23 @@ function getData() {
   try { result.regime    = parseRegime(ss); }      catch(e) { result.regime    = {signals:[]}; }
   try { result.sectorMap = parseSectorMap(ss); }    catch(e) { result.sectorMap = {context:'',sectors:[]}; }
   try { result.universe  = parseUniverse(ss); }     catch(e) { result.universe  = []; }
-  try { result.rotation  = parseRotation(ss); }     catch(e) { result.rotation  = {pairs:[],movers:[]}; }
+  try { result.rotation  = parseRotation(ss); }     catch(e) { result.rotation  = {pairs:[],sectorSignals:[],creditHealth:[],creditVerdict:'',movers:[]}; }
   try { result.emerging  = parseEmerging(ss); }      catch(e) { result.emerging  = []; }
   try { result.ratios    = parseRatios(ss); }        catch(e) { result.ratios    = {}; }
   try { result.credit    = parseCredit(ss); }        catch(e) { result.credit    = {spreads:[]}; }
   try { result.equalWeight = parseEqualWeight(ss); } catch(e) { result.equalWeight = {gauges:[],sectorBreadth:[]}; }
-
-  // ── Conviction picks (formula-driven sheet, replaces universe top-25) ──
+  // ── Conviction picks (formula-driven sheet) ──
   try { result.conviction = parseConviction(ss); } catch(e) { result.conviction = []; }
-
-  // ── NEW: Drill-down groups (sector ticker → sub-ETFs) ──
-  try { result.drillDown = buildDrillDown(result.universe, result.sectorMap); } catch(e) { result.drillDown = {}; }
-
-  // ── NEW: Signal changes vs last snapshot ──
+  // ── Drill-down groups (INDUSTRY SCANNER with PARENT mapping) ──
+  try { result.drillDown = buildDrillDown(ss, result.sectorMap); } catch(e) { result.drillDown = {}; }
+  // ── Signal changes vs last snapshot ──
   try { result.changes = computeChanges(ss, result); } catch(e) { result.changes = {items:[],hasPrevious:false}; }
-
   result.ts = new Date().toISOString();
   return JSON.stringify(result);
 }
-
-
 // ═══════════════════════════════════════════════════════
-// SNAPSHOT SYSTEM — Priority 1
+// SNAPSHOT SYSTEM
 // ═══════════════════════════════════════════════════════
-
-/**
- * Compute regime verdict server-side (mirrors frontend getVerdict).
- */
 function computeVerdict(signals) {
   if (!signals || !signals.length) return 'LOADING';
   var bull = 0, bear = 0;
@@ -71,10 +62,6 @@ function computeVerdict(signals) {
   if (bear >= 4) return 'RISK-OFF';
   return 'MIXED';
 }
-
-/**
- * Build a flat snapshot object from current parsed data.
- */
 function buildSnapshot(data) {
   return {
     regimeVerdict: computeVerdict(data.regime.signals),
@@ -95,26 +82,15 @@ function buildSnapshot(data) {
     })
   };
 }
-
-/**
- * Write today's snapshot to _SNAPSHOTS tab.
- * Safe to call multiple times per day — overwrites same-day row.
- * Run via daily trigger (4-5pm ET) or manually from script editor.
- */
 function snapshotSignals() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // Parse current state
   var data = {};
   try { data.regime    = parseRegime(ss); }      catch(e) { data.regime    = {signals:[]}; }
   try { data.sectorMap = parseSectorMap(ss); }    catch(e) { data.sectorMap = {context:'',sectors:[]}; }
   try { data.universe  = parseUniverse(ss); }     catch(e) { data.universe  = []; }
-  try { data.rotation  = parseRotation(ss); }     catch(e) { data.rotation  = {pairs:[],movers:[]}; }
+  try { data.rotation  = parseRotation(ss); }     catch(e) { data.rotation  = {pairs:[],sectorSignals:[],creditHealth:[],creditVerdict:'',movers:[]}; }
   try { data.conviction = parseConviction(ss); }  catch(e) { data.conviction = []; }
-
   var snapshot = buildSnapshot(data);
-
-  // Get or create _SNAPSHOTS tab
   var sheet = ss.getSheetByName('_SNAPSHOTS');
   if (!sheet) {
     sheet = ss.insertSheet('_SNAPSHOTS');
@@ -123,12 +99,9 @@ function snapshotSignals() {
     sheet.getRange('A1:D1').setFontWeight('bold');
     sheet.hideSheet();
   }
-
   var today = Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd');
   var ts = new Date().toISOString();
   var jsonStr = JSON.stringify(snapshot);
-
-  // Check if today already has a row — update it; otherwise append
   var rows = sheet.getDataRange().getValues();
   var found = false;
   for (var i = 1; i < rows.length; i++) {
@@ -143,22 +116,13 @@ function snapshotSignals() {
   if (!found) {
     sheet.appendRow([today, ts, snapshot.regimeVerdict, jsonStr]);
   }
-
   return 'Snapshot saved: ' + today + ' — ' + snapshot.regimeVerdict;
 }
-
-/**
- * Compare current live state against last snapshot.
- * Returns {items: [...changes], hasPrevious: bool, prevDate: string}
- */
 function computeChanges(ss, currentData) {
   var sheet = ss.getSheetByName('_SNAPSHOTS');
   if (!sheet) return { items: [], hasPrevious: false, prevDate: '' };
-
   var rows = sheet.getDataRange().getValues();
   if (rows.length < 2) return { items: [], hasPrevious: false, prevDate: '' };
-
-  // Find the most recent snapshot that is NOT today
   var today = Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd');
   var prevRow = null;
   for (var i = rows.length - 1; i >= 1; i--) {
@@ -169,19 +133,14 @@ function computeChanges(ss, currentData) {
       break;
     }
   }
-
   if (!prevRow) return { items: [], hasPrevious: false, prevDate: '' };
-
   var prev;
   try { prev = JSON.parse(prevRow[3]); } catch(e) { return { items: [], hasPrevious: false, prevDate: '' }; }
-
   var prevDate = '';
   try { prevDate = Utilities.formatDate(new Date(prevRow[0]), 'America/New_York', 'MMM d'); } catch(e) { prevDate = String(prevRow[0]); }
-
   var now = buildSnapshot(currentData);
   var changes = [];
-
-  // ── 1. Regime verdict flip ──
+  // 1. Regime verdict flip
   if (now.regimeVerdict !== prev.regimeVerdict) {
     changes.push({
       type: 'REGIME', severity: 'high',
@@ -189,8 +148,7 @@ function computeChanges(ss, currentData) {
       msg: 'Regime shifted: ' + prev.regimeVerdict + ' → ' + now.regimeVerdict
     });
   }
-
-  // ── 2. Individual signal flips ──
+  // 2. Individual signal flips
   var prevSigMap = {};
   (prev.signals || []).forEach(function(s) { prevSigMap[s.signal] = s.verdict; });
   (now.signals || []).forEach(function(s) {
@@ -205,8 +163,7 @@ function computeChanges(ss, currentData) {
       });
     }
   });
-
-  // ── 3. Sector quadrant transitions ──
+  // 3. Sector quadrant transitions
   var prevSecMap = {};
   (prev.sectors || []).forEach(function(s) { prevSecMap[s.ticker] = s.quadrant; });
   (now.sectors || []).forEach(function(s) {
@@ -221,14 +178,13 @@ function computeChanges(ss, currentData) {
       });
     }
   });
-
-  // ── 4. Rank surges / drops (top 25 movers) ──
+  // 4. Rank surges / drops (top 25 movers)
   var prevRankMap = {};
   (prev.top25 || []).forEach(function(u) { prevRankMap[u.ticker] = u.rank; });
   (now.top25 || []).forEach(function(u) {
     var old = prevRankMap[u.ticker];
     if (old != null) {
-      var delta = old - u.rank; // positive = improved
+      var delta = old - u.rank;
       if (delta >= 15) {
         changes.push({
           type: 'RANK', severity: 'low',
@@ -237,7 +193,6 @@ function computeChanges(ss, currentData) {
         });
       }
     } else {
-      // New entry into top 25
       changes.push({
         type: 'RANK', severity: 'low',
         icon: '★', color: '#44aaff',
@@ -245,7 +200,6 @@ function computeChanges(ss, currentData) {
       });
     }
   });
-  // Check for drops out of top 25
   var nowTop25Set = {};
   (now.top25 || []).forEach(function(u) { nowTop25Set[u.ticker] = true; });
   (prev.top25 || []).slice(0, 15).forEach(function(u) {
@@ -257,8 +211,7 @@ function computeChanges(ss, currentData) {
       });
     }
   });
-
-  // ── 5. Rotation signal state changes ──
+  // 5. Rotation signal state changes
   var prevRotMap = {};
   (prev.rotations || []).forEach(function(r) { prevRotMap[r.pair] = r.signal; });
   (now.rotations || []).forEach(function(r) {
@@ -273,105 +226,54 @@ function computeChanges(ss, currentData) {
       });
     }
   });
-
-  // Sort by severity: high → medium → low
   var sevOrder = { high: 0, medium: 1, low: 2 };
   changes.sort(function(a, b) { return (sevOrder[a.severity] || 9) - (sevOrder[b.severity] || 9); });
-
   return { items: changes, hasPrevious: true, prevDate: prevDate };
 }
-
-
 // ═══════════════════════════════════════════════════════
-// DRILL-DOWN SYSTEM — Priority 2
+// DRILL-DOWN — Uses INDUSTRY SCANNER PARENT column
 // ═══════════════════════════════════════════════════════
-
-/**
- * Group universe ETFs by their parent sector.
- * Matches universe category → sector name using fuzzy matching.
- * Returns { "XLK": [{ticker, name, ...}, ...], "XLF": [...], ... }
- */
-function buildDrillDown(universe, sectorMap) {
-  if (!universe || !sectorMap || !sectorMap.sectors) return {};
-
-  // Build a lookup: normalized sector name → sector ticker
-  var nameToTicker = {};
-  var tickerToName = {};
-  (sectorMap.sectors || []).forEach(function(s) {
-    var nm = String(s.name || '').toLowerCase().trim();
-    var tk = String(s.ticker || '');
-    if (nm && tk) {
-      nameToTicker[nm] = tk;
-      tickerToName[tk] = nm;
-    }
-  });
-
-  // For each non-sector ETF, find its parent sector
+function buildDrillDown(ss, sectorMap) {
+  var d = readRange(ss, 'INDUSTRY SCANNER', 'A1:Q120');
+  if (!d || d.length < 2) return {};
+  // Find header row
+  var hdr = findRow(d, ['ETF', 'PARENT']);
+  if (hdr < 0) hdr = findRow(d, ['ETF', 'NAME']);
+  if (hdr < 0) return {};
   var drill = {};
-  (universe || []).forEach(function(u) {
-    if (String(u.type) === 'SECTOR') return; // skip sector ETFs themselves
-    var cat = String(u.category || '').toLowerCase().trim();
-    if (!cat) return;
-
-    var matched = null;
-
-    // Exact match
-    if (nameToTicker[cat]) {
-      matched = nameToTicker[cat];
-    } else {
-      // Fuzzy: check if category contains a sector name or vice versa
-      for (var nm in nameToTicker) {
-        if (cat.indexOf(nm) !== -1 || nm.indexOf(cat) !== -1) {
-          matched = nameToTicker[nm];
-          break;
-        }
-      }
-    }
-
-    // Fallback: common abbreviation mappings
-    if (!matched) {
-      var abbrevMap = {
-        'tech': 'XLK', 'technology': 'XLK', 'info tech': 'XLK', 'information technology': 'XLK',
-        'financials': 'XLF', 'financial': 'XLF', 'banks': 'XLF',
-        'energy': 'XLE', 'oil': 'XLE', 'oil & gas': 'XLE',
-        'health care': 'XLV', 'healthcare': 'XLV', 'biotech': 'XLV',
-        'industrials': 'XLI', 'industrial': 'XLI',
-        'consumer discretionary': 'XLY', 'discretionary': 'XLY', 'cons disc': 'XLY', 'cons. disc.': 'XLY',
-        'consumer staples': 'XLP', 'staples': 'XLP', 'cons staples': 'XLP', 'cons. staples': 'XLP',
-        'utilities': 'XLU', 'utility': 'XLU',
-        'real estate': 'XLRE', 'reits': 'XLRE',
-        'materials': 'XLB', 'basic materials': 'XLB',
-        'communication services': 'XLC', 'comm services': 'XLC', 'communication': 'XLC', 'telecom': 'XLC',
-        'broad market': null, 'multi-sector': null, 'bonds': null, 'fixed income': null, 'commodity': null, 'commodities': null, 'crypto': null, 'currency': null, 'volatility': null
-      };
-      for (var key in abbrevMap) {
-        if (cat === key || cat.indexOf(key) !== -1) {
-          matched = abbrevMap[key]; // null means intentionally ungrouped
-          break;
-        }
-      }
-    }
-
-    if (matched) {
-      if (!drill[matched]) drill[matched] = [];
-      drill[matched].push({
-        rank: u.rank, ticker: u.ticker, name: u.name,
-        type: u.type, composite: u.composite, quadrant: u.quadrant || '',
-        rs1w: u.rs1w, rs1m: u.rs1m, rs3m: u.rs3m, rs6m: u.rs6m,
-        percentile: u.percentile, momentum: u.momentum
-      });
-    }
-  });
-
-  // Sort each group by rank ascending (best first)
+  for (var i = hdr + 1; i < d.length; i++) {
+    var etf = String(d[i][0] || '').trim();
+    var parent = String(d[i][4] || '').trim(); // PARENT is col E (index 4)
+    if (!etf || !parent) continue;
+    if (!drill[parent]) drill[parent] = [];
+    drill[parent].push({
+      ticker: etf,
+      name: String(d[i][1] || ''),
+      category: String(d[i][2] || ''),
+      sub: String(d[i][3] || ''),
+      rs1w: num(d[i][5]),
+      rs1m: num(d[i][6]),
+      rs3m: num(d[i][7]),
+      rs6m: num(d[i][8]),
+      rs12m: num(d[i][9]),
+      rsYtd: num(d[i][10]),
+      rsVsSpy: num(d[i][11]),
+      rank: d[i][12],
+      rsVsSector: num(d[i][13]),
+      sectorRank: d[i][14],
+      momentum: num(d[i][15]),
+      quadrant: String(d[i][16] || ''),
+      type: 'INDUSTRY',
+      composite: num(d[i][11]),        // rsVsSpy serves as composite for display
+      percentile: null                 // not directly in INDUSTRY SCANNER
+    });
+  }
+  // Sort each group by rank ascending
   for (var key in drill) {
     drill[key].sort(function(a, b) { return (a.rank || 999) - (b.rank || 999); });
   }
-
   return drill;
 }
-
-
 // ═══════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════
@@ -380,7 +282,6 @@ function readRange(ss, sheetName, range) {
   if (!sheet) return [];
   return sheet.getRange(range).getValues();
 }
-
 function findRow(data, keywords) {
   for (var i = 0; i < data.length; i++) {
     var joined = data[i].map(function(c){return String(c).toUpperCase();}).join('|');
@@ -392,21 +293,16 @@ function findRow(data, keywords) {
   }
   return -1;
 }
-
 function findSection(data, sectionText) {
   for (var i = 0; i < data.length; i++) {
     if (String(data[i][0]).toUpperCase().indexOf(sectionText.toUpperCase()) !== -1) return i;
   }
   return -1;
 }
-
 function num(v) { return (typeof v === 'number' && !isNaN(v)) ? v : null; }
-
-
 // ═══════════════════════════════════════════════════════
-// PARSERS — (unchanged from v1 except where noted)
+// PARSERS
 // ═══════════════════════════════════════════════════════
-
 // ── REGIME ───────────────────────────────────────────
 function parseRegime(ss) {
   var d = readRange(ss, 'REGIME', 'A1:J25');
@@ -425,10 +321,9 @@ function parseRegime(ss) {
   }
   return { signals: signals };
 }
-
-// ── SECTOR MAP ───────────────────────────────────────
+// ── SECTOR MAP (EXTENDED to col O) ───────────────────
 function parseSectorMap(ss) {
-  var d = readRange(ss, 'SECTOR MAP', 'A1:K25');
+  var d = readRange(ss, 'SECTOR MAP', 'A1:O25');  // ← CHANGED: was A1:K25
   var context = '';
   for (var i = 0; i < Math.min(5, d.length); i++) {
     if (String(d[i][0]).indexOf('REGIME') !== -1) { context = String(d[i][2] || ''); break; }
@@ -442,13 +337,16 @@ function parseSectorMap(ss) {
         rank: d[i][0], ticker: d[i][1], name: d[i][2], conviction: num(d[i][3]),
         rs_spy: num(d[i][4]), rs_1w: num(d[i][5]), rs_1m: num(d[i][6]),
         rs_3m: num(d[i][7]), momentum: num(d[i][8]), accel: num(d[i][9]),
-        quadrant: String(d[i][10] || '')
+        quadrant: String(d[i][10] || ''),
+        rotation: String(d[i][11] || ''),          // NEW: col L
+        breadth3m: num(d[i][12]),                   // NEW: col M
+        breadthStatus: String(d[i][13] || ''),      // NEW: col N
+        verdict: String(d[i][14] || '')             // NEW: col O
       });
     }
   }
   return { context: context, sectors: sectors };
 }
-
 // ── UNIVERSE RANK ────────────────────────────────────
 function parseUniverse(ss) {
   var d = readRange(ss, 'UNIVERSE RANK', 'A1:P260');
@@ -469,42 +367,74 @@ function parseUniverse(ss) {
   }
   return items;
 }
-
-// ── ROTATION ─────────────────────────────────────────
+// ── ROTATION (ALL 3 SECTIONS) ────────────────────────
 function parseRotation(ss) {
-  var d = readRange(ss, 'ROTATION', 'A1:I40');
-  var hdr = findRow(d, ['PAIR','SPREAD','SIGNAL']);
+  var d = readRange(ss, 'ROTATION', 'A1:I45');  // ← CHANGED: was A1:I40
   var pairs = [];
-  if (hdr >= 0) {
-    for (var i = hdr+1; i < d.length; i++) {
+  var sectorSignals = [];
+  var creditHealth = [];
+  var creditVerdict = '';
+  // Section 1: Risk Regime Pairs
+  var sec1 = findSection(d, 'RISK REGIME PAIRS');
+  if (sec1 >= 0) {
+    for (var i = sec1 + 1; i < d.length; i++) {
+      // Skip header row
+      if (String(d[i][1]).toUpperCase() === 'PAIR') continue;
+      // Stop at next section
       if (!d[i][1] || String(d[i][0]).indexOf('▸') !== -1) break;
       pairs.push({
-        pair: d[i][1], desc: d[i][2],
+        pair: String(d[i][1]), desc: String(d[i][2]),
         spread1w: num(d[i][3]), spread1m: num(d[i][4]),
         spread3m: num(d[i][5]), spread12m: num(d[i][6]),
-        trend: d[i][7], signal: String(d[i][8] || '')
+        trend: String(d[i][7] || ''), signal: String(d[i][8] || '')
       });
     }
   }
-  var mhdr = findRow(d, ['SECTOR','DESCRIPTION','TREND']);
-  var movers = [];
-  if (mhdr >= 0 && mhdr > hdr) {
-    for (var i = mhdr+1; i < d.length; i++) {
-      if (!d[i][1] || String(d[i][0]).indexOf('▸') !== -1 || String(d[i][0]).indexOf('█') !== -1) break;
-      if (String(d[i][1]).indexOf('RATIO') !== -1 || String(d[i][1]).indexOf('MEASURES') !== -1) break;
-      movers.push({
-        ticker: d[i][1], name: d[i][2],
-        change1w: num(d[i][3]), change1m: num(d[i][4]),
-        trend: d[i][7], signal: String(d[i][8] || '')
+  // Section 2: Sector vs SPY
+  var sec2 = findSection(d, 'SECTOR vs SPY');
+  if (sec2 >= 0) {
+    for (var i = sec2 + 1; i < d.length; i++) {
+      if (String(d[i][1]).toUpperCase() === 'SECTOR') continue; // skip header
+      if (!d[i][1] || String(d[i][0]).indexOf('▸') !== -1) break;
+      sectorSignals.push({
+        sector: String(d[i][1]), desc: String(d[i][2]),
+        spread1w: num(d[i][3]), spread1m: num(d[i][4]),
+        spread3m: num(d[i][5]), spread12m: num(d[i][6]),
+        trend: String(d[i][7] || ''), signal: String(d[i][8] || '')
       });
     }
   }
-  return { pairs: pairs, movers: movers };
+  // Section 3: Credit Health
+  var sec3 = findSection(d, 'CREDIT HEALTH');
+  if (sec3 >= 0) {
+    for (var i = sec3 + 1; i < d.length; i++) {
+      // Stop at credit verdict row or next section
+      if (String(d[i][0]).indexOf('CREDIT VERDICT') !== -1) {
+        creditVerdict = String(d[i][8] || '');
+        break;
+      }
+      // Skip header row
+      if (String(d[i][1]).toUpperCase() === 'RATIO' || String(d[i][2]).toUpperCase() === 'MEASURES') continue;
+      if (!d[i][1]) break;
+      creditHealth.push({
+        ratio: String(d[i][1]), measures: String(d[i][2]),
+        delta1w: num(d[i][3]), delta1m: num(d[i][4]),
+        delta3m: num(d[i][5]), composite: num(d[i][6]),
+        trend: String(d[i][7] || ''), status: String(d[i][8] || '')
+      });
+    }
+  }
+  return {
+    pairs: pairs,
+    sectorSignals: sectorSignals,
+    creditHealth: creditHealth,
+    creditVerdict: creditVerdict,
+    movers: []                        // backward compat
+  };
 }
-
-// ── EMERGING ─────────────────────────────────────────
+// ── EMERGING (EXTENDED to col O) ─────────────────────
 function parseEmerging(ss) {
-  var d = readRange(ss, 'EMERGING', 'A1:J30');
+  var d = readRange(ss, 'EMERGING', 'A1:O30');  // ← CHANGED: was A1:J30
   var hdr = findRow(d, ['TICKER','RS 1W']);
   var items = [];
   if (hdr >= 0) {
@@ -514,13 +444,17 @@ function parseEmerging(ss) {
         rank: d[i][0], ticker: String(d[i][1]), name: String(d[i][2]),
         type: String(d[i][3]), sector: String(d[i][4]),
         rs1w: num(d[i][5]), rs1m: num(d[i][6]), rs3m: num(d[i][7]),
-        rsComposite: num(d[i][8]), compRank: d[i][9]
+        rsComposite: num(d[i][8]), compRank: d[i][9],
+        percentile: num(d[i][10]),         // NEW: col K
+        quadrant: String(d[i][11] || ''),  // NEW: col L
+        rotation: String(d[i][12] || ''),  // NEW: col M
+        rankDelta: d[i][13],               // NEW: col N (Δ W→M)
+        note: String(d[i][14] || '')       // NEW: col O
       });
     }
   }
   return items;
 }
-
 // ── RATIO COCKPIT ────────────────────────────────────
 function parseRatios(ss) {
   var d = readRange(ss, 'RATIO COCKPIT', 'A1:K65');
@@ -552,7 +486,6 @@ function parseRatios(ss) {
   }
   return sections;
 }
-
 // ── CREDIT MONITOR ───────────────────────────────────
 function parseCredit(ss) {
   var d = readRange(ss, 'CREDIT MONITOR', 'A1:J25');
@@ -571,7 +504,6 @@ function parseCredit(ss) {
   }
   return { spreads: spreads };
 }
-
 // ── EQUAL WEIGHT ─────────────────────────────────────
 function parseEqualWeight(ss) {
   var d = readRange(ss, 'EQUAL WEIGHT', 'A1:L40');
@@ -600,33 +532,32 @@ function parseEqualWeight(ss) {
   }
   return { gauges: gauges, sectorBreadth: sectorBreadth };
 }
-
-// ── CONVICTION (formula-driven top picks) ────────────
-// Columns: RK | TICKER | NAME | TYPE | SECTOR | RS COMPOSITE | PERCENTILE |
-//          RS 1W | RS 1M | RS 3M | MOMENTUM | ACCEL | QUADRANT | ROTATION | CONVICTION
+// ── CONVICTION (with text label) ─────────────────────
 function parseConviction(ss) {
-  var d = readRange(ss, 'Conviction', 'A1:O260');
+  var d = readRange(ss, 'CONVICTION', 'A1:O260');  // ← CHANGED: was 'Conviction'
   var hdr = findRow(d, ['TICKER', 'CONVICTION']);
   var items = [];
   if (hdr >= 0) {
     for (var i = hdr+1; i < d.length; i++) {
       if (!d[i][1]) break;
+      // Stop if we hit the "BOTTOM 10" section marker
+      if (String(d[i][0]).indexOf('▸') !== -1 || String(d[i][0]).indexOf('BOTTOM') !== -1) break;
       items.push({
-        rank:       d[i][0],
-        ticker:     String(d[i][1]),
-        name:       String(d[i][2]),
-        type:       String(d[i][3]),
-        category:   String(d[i][4]),
-        composite:  num(d[i][5]),
-        percentile: num(d[i][6]),
-        rs1w:       num(d[i][7]),
-        rs1m:       num(d[i][8]),
-        rs3m:       num(d[i][9]),
-        momentum:   num(d[i][10]),
-        accel:      num(d[i][11]),
-        quadrant:   String(d[i][12] || ''),
-        rotation:   String(d[i][13] || ''),
-        conviction: num(d[i][14])
+        rank:            d[i][0],
+        ticker:          String(d[i][1]),
+        name:            String(d[i][2]),
+        type:            String(d[i][3]),
+        category:        String(d[i][4]),
+        composite:       num(d[i][5]),
+        percentile:      num(d[i][6]),
+        rs1w:            num(d[i][7]),
+        rs1m:            num(d[i][8]),
+        rs3m:            num(d[i][9]),
+        momentum:        num(d[i][10]),
+        accel:           num(d[i][11]),
+        quadrant:        String(d[i][12] || ''),
+        rotation:        String(d[i][13] || ''),
+        convictionLabel: String(d[i][14] || '')  // ← CHANGED: was num(d[i][14])
       });
     }
   }
