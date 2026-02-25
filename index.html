@@ -378,11 +378,31 @@ function renderDashboard(v){
   });
   html+='</tbody></table></div>';
 
-  // TOP 25
-  html+='<div class="panel s2"><div class="phdr">STEP 3 — TOP 25 HIGH CONVICTION PICKS</div><div style="overflow-x:auto"><table><thead><tr><th>#</th><th>TICKER</th><th>NAME</th><th>TYPE</th><th>SECTOR</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="r">6M</th><th class="r">12M</th><th class="r">COMP</th><th class="r">%ILE</th><th class="c">SPARK</th><th class="r">QUAD</th></tr></thead><tbody>';
-  (d.universe||[]).slice(0,25).forEach(function(u,i){
+  // TOP 25 — reads from formula-driven Conviction sheet
+  var convRows = (d.conviction && d.conviction.length) ? d.conviction : (d.universe||[]).slice(0,25);
+  html+='<div class="panel s2"><div class="phdr">STEP 3 — TOP 25 HIGH CONVICTION PICKS</div><div style="overflow-x:auto"><table><thead><tr><th>#</th><th>TICKER</th><th>NAME</th><th>TYPE</th><th>SECTOR</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="r">COMP</th><th class="r">%ILE</th><th class="r">MOM</th><th class="r">ACCEL</th><th class="r">CONVICTION</th><th class="r">ROTATION</th><th class="c">SPARK</th><th class="r">QUAD</th></tr></thead><tbody>';
+  convRows.slice(0,25).forEach(function(u,i){
     var bg=i<5?'background:#00dd8808':'';
-    html+='<tr style="'+bg+'"><td class="dimx">'+u.rank+'</td><td class="tk">'+u.ticker+'</td><td class="dim" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+u.name+'</td><td><span class="badge" style="'+typeBg(u.type)+'">'+u.type+'</span></td><td class="dim" style="font-size:9px">'+u.category+'</td><td class="r" style="color:'+vc(u.rs1w)+'">'+pct(u.rs1w)+'</td><td class="r" style="color:'+vc(u.rs1m)+'">'+pct(u.rs1m)+'</td><td class="r" style="color:'+vc(u.rs3m)+'">'+pct(u.rs3m)+'</td><td class="r" style="color:'+vc(u.rs6m)+'">'+pct(u.rs6m)+'</td><td class="r" style="color:'+vc(u.rs12m)+'">'+pct(u.rs12m)+'</td><td class="r" style="font-weight:700;color:'+vc(u.composite)+'">'+pct(u.composite)+'</td><td class="r"><span class="pbar" style="background:linear-gradient(90deg,#00dd8833 '+((u.percentile||0)*100)+'%,transparent '+((u.percentile||0)*100)+'%)">'+((u.percentile||0)*100).toFixed(0)+'</span></td><td class="c">'+spark(ann(u.rs1w,u.rs1m,u.rs3m,u.rs6m,u.rs12m))+'</td><td class="r" style="color:'+qc(u.quadrant)+';font-size:9px">'+u.quadrant+'</td></tr>';
+    var cvVal = u.conviction != null ? pct(u.conviction) : '—';
+    var cvColor = u.conviction != null ? vc(u.conviction) : '#555';
+    html+='<tr style="'+bg+'">';
+    html+='<td class="dimx">'+u.rank+'</td>';
+    html+='<td class="tk">'+u.ticker+'</td>';
+    html+='<td class="dim" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+u.name+'</td>';
+    html+='<td><span class="badge" style="'+typeBg(u.type)+'">'+u.type+'</span></td>';
+    html+='<td class="dim" style="font-size:9px">'+u.category+'</td>';
+    html+='<td class="r" style="color:'+vc(u.rs1w)+'">'+pct(u.rs1w)+'</td>';
+    html+='<td class="r" style="color:'+vc(u.rs1m)+'">'+pct(u.rs1m)+'</td>';
+    html+='<td class="r" style="color:'+vc(u.rs3m)+'">'+pct(u.rs3m)+'</td>';
+    html+='<td class="r" style="font-weight:700;color:'+vc(u.composite)+'">'+pct(u.composite)+'</td>';
+    html+='<td class="r"><span class="pbar" style="background:linear-gradient(90deg,#00dd8833 '+((u.percentile||0)*100)+'%,transparent '+((u.percentile||0)*100)+'%)">'+((u.percentile||0)*100).toFixed(0)+'</span></td>';
+    html+='<td class="r" style="color:'+vc(u.momentum)+'">'+pct(u.momentum)+'</td>';
+    html+='<td class="r" style="color:'+vc(u.accel)+'">'+pct(u.accel)+'</td>';
+    html+='<td class="r" style="font-weight:700;color:'+cvColor+'">'+cvVal+'</td>';
+    html+='<td class="r" style="color:'+sc(u.rotation)+';font-size:9px">'+u.rotation+'</td>';
+    html+='<td class="c">'+spark(ann(u.rs1w,u.rs1m,u.rs3m,null,null))+'</td>';
+    html+='<td class="r" style="color:'+qc(u.quadrant)+';font-size:9px">'+u.quadrant+'</td>';
+    html+='</tr>';
   });
   html+='</tbody></table></div></div>';
   html+='</div>'; // close g2

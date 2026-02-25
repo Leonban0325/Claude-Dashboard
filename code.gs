@@ -36,6 +36,9 @@ function getData() {
   try { result.credit    = parseCredit(ss); }        catch(e) { result.credit    = {spreads:[]}; }
   try { result.equalWeight = parseEqualWeight(ss); } catch(e) { result.equalWeight = {gauges:[],sectorBreadth:[]}; }
 
+  // ── Conviction picks (formula-driven sheet, replaces universe top-25) ──
+  try { result.conviction = parseConviction(ss); } catch(e) { result.conviction = []; }
+
   // ── NEW: Drill-down groups (sector ticker → sub-ETFs) ──
   try { result.drillDown = buildDrillDown(result.universe, result.sectorMap); } catch(e) { result.drillDown = {}; }
 
@@ -81,10 +84,10 @@ function buildSnapshot(data) {
     sectors: (data.sectorMap.sectors || []).map(function(s) {
       return { ticker: String(s.ticker), name: String(s.name), quadrant: String(s.quadrant), rank: s.rank, conviction: s.conviction };
     }),
-    top10: (data.universe || []).slice(0, 10).map(function(u) {
+    top10: ((data.conviction && data.conviction.length ? data.conviction : data.universe) || []).slice(0, 10).map(function(u) {
       return String(u.ticker);
     }),
-    top25: (data.universe || []).slice(0, 25).map(function(u) {
+    top25: ((data.conviction && data.conviction.length ? data.conviction : data.universe) || []).slice(0, 25).map(function(u) {
       return { ticker: String(u.ticker), rank: u.rank };
     }),
     rotations: (data.rotation.pairs || []).map(function(p) {
@@ -107,6 +110,7 @@ function snapshotSignals() {
   try { data.sectorMap = parseSectorMap(ss); }    catch(e) { data.sectorMap = {context:'',sectors:[]}; }
   try { data.universe  = parseUniverse(ss); }     catch(e) { data.universe  = []; }
   try { data.rotation  = parseRotation(ss); }     catch(e) { data.rotation  = {pairs:[],movers:[]}; }
+  try { data.conviction = parseConviction(ss); }  catch(e) { data.conviction = []; }
 
   var snapshot = buildSnapshot(data);
 
@@ -595,4 +599,36 @@ function parseEqualWeight(ss) {
     }
   }
   return { gauges: gauges, sectorBreadth: sectorBreadth };
+}
+
+// ── CONVICTION (formula-driven top picks) ────────────
+// Columns: RK | TICKER | NAME | TYPE | SECTOR | RS COMPOSITE | PERCENTILE |
+//          RS 1W | RS 1M | RS 3M | MOMENTUM | ACCEL | QUADRANT | ROTATION | CONVICTION
+function parseConviction(ss) {
+  var d = readRange(ss, 'Conviction', 'A1:O260');
+  var hdr = findRow(d, ['TICKER', 'CONVICTION']);
+  var items = [];
+  if (hdr >= 0) {
+    for (var i = hdr+1; i < d.length; i++) {
+      if (!d[i][1]) break;
+      items.push({
+        rank:       d[i][0],
+        ticker:     String(d[i][1]),
+        name:       String(d[i][2]),
+        type:       String(d[i][3]),
+        category:   String(d[i][4]),
+        composite:  num(d[i][5]),
+        percentile: num(d[i][6]),
+        rs1w:       num(d[i][7]),
+        rs1m:       num(d[i][8]),
+        rs3m:       num(d[i][9]),
+        momentum:   num(d[i][10]),
+        accel:      num(d[i][11]),
+        quadrant:   String(d[i][12] || ''),
+        rotation:   String(d[i][13] || ''),
+        conviction: num(d[i][14])
+      });
+    }
+  }
+  return items;
 }
