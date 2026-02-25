@@ -319,7 +319,9 @@ function parseRegime(ss) {
       });
     }
   }
-  return { signals: signals };
+  // D12 = row index 11, col D = index 3 (composite regime score, e.g. 0.047 = 4.7%)
+  var score = (d.length > 11) ? num(d[11][3]) : null;
+  return { signals: signals, score: score };
 }
 // ── SECTOR MAP (EXTENDED to col O) ───────────────────
 function parseSectorMap(ss) {
