@@ -62,7 +62,7 @@ function computeVerdict(signals) {
   var bull = 0, bear = 0;
   for (var i = 0; i < signals.length; i++) {
     var v = String(signals[i].verdict || '').toUpperCase();
-    if (v.indexOf('BULL') !== -1 || v.indexOf('RISK-ON') !== -1 || v.indexOf('CALM') !== -1) bull++;
+    if (v.indexOf('BULL') !== -1 || v.indexOf('RISK-ON') !== -1 || v.indexOf('CALM') !== -1 || v.indexOf('GLOBAL ON') !== -1) bull++;
     if (v.indexOf('BEAR') !== -1 || v.indexOf('RISK-OFF') !== -1 || v.indexOf('FEAR') !== -1) bear++;
   }
   if (bull >= 4) return 'RISK-ON';
@@ -419,7 +419,7 @@ function parseRegime(ss) {
       signals.push({
         signal: d[i][1], proxy: d[i][2], reading: num(d[i][3]),
         w1: num(d[i][4]), m1: num(d[i][5]), m3: num(d[i][6]),
-        trend: d[i][7], verdict: String(d[i][8]), weight: String(d[i][9])
+        trend: d[i][7], verdict: String(d[i][8]), weight: d[i][9]
       });
     }
   }

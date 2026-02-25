@@ -144,7 +144,8 @@ function vc(v){if(v==null||isNaN(v))return'#555';return v>0?'#00dd88':v<0?'#ff55
 function sc(s){if(!s)return'#555';s=String(s);if(s.indexOf('CONFIRMED OFF')!==-1||s.indexOf('STRESS')!==-1)return'#ff4444';if(s.indexOf('TURNING OFF')!==-1||s.indexOf('DETERIORAT')!==-1)return'#ff8844';if(s.indexOf('TURNING ON')!==-1||s.indexOf('IMPROV')!==-1)return'#44aaff';if(s.indexOf('CONFIRMED')!==-1)return'#00dd88';return'#888';}
 function tc(t){if(!t)return'#555';t=String(t);if(t.indexOf('▲▲')!==-1)return'#00dd88';if(t.indexOf('▲')!==-1)return'#44aaff';if(t.indexOf('▼▼')!==-1)return'#ff4444';if(t.indexOf('▼')!==-1)return'#ff8844';return'#888';}
 function qc(q){if(!q)return'#555';q=String(q);if(q.indexOf('LEADING')!==-1)return'#00dd88';if(q.indexOf('IMPROVING')!==-1)return'#44aaff';if(q.indexOf('WEAKENING')!==-1)return'#ff8844';if(q.indexOf('LAGGING')!==-1)return'#ff4444';return'#888';}
-function rc(v){if(!v)return'#888';v=String(v);if(v.indexOf('BULL')!==-1||v.indexOf('RISK-ON')!==-1||v.indexOf('CALM')!==-1)return'#00dd88';if(v.indexOf('NEUTRAL')!==-1)return'#ffaa00';if(v.indexOf('VALUE')!==-1)return'#44aaff';return'#ff5555';}
+function rc(v){if(!v)return'#888';v=String(v);if(v.indexOf('BULL')!==-1||v.indexOf('RISK-ON')!==-1||v.indexOf('CALM')!==-1||v.indexOf('GLOBAL ON')!==-1)return'#00dd88';if(v.indexOf('NEUTRAL')!==-1)return'#ffaa00';if(v.indexOf('VALUE')!==-1)return'#44aaff';return'#ff5555';}
+function wt(v){if(v===null||v===undefined||v==='')return'—';if(typeof v==='string'&&v.indexOf('%')!==-1)return v;var n=parseFloat(v);if(isNaN(n))return String(v);return(n>0&&n<=1?(n*100).toFixed(0):n.toFixed(0))+'%';}
 function hc(v){if(v==null)return'#1a1a2e';var n=v*100;if(n>15)return'#00884480';if(n>8)return'#00dd8855';if(n>3)return'#00dd8833';if(n>0)return'#00dd8818';if(n>-3)return'#ff444418';if(n>-8)return'#ff444433';if(n>-15)return'#ff555555';return'#ff444480';}
 function typeBg(t){t=String(t);if(t==='SECTOR')return'background:#1a2744;color:#44aaff';if(t==='THEMATIC')return'background:#2a1a33;color:#bb77dd';if(t==='INTL')return'background:#1a3322;color:#44dd88';return'background:#1a2233;color:#888';}
 
@@ -239,7 +240,7 @@ function spark(vals,w,h){
 
 function ann(w1,m1,m3,m6,m12){return[m12==null?null:m12,m6==null?null:m6*2,m3==null?null:m3*4,m1==null?null:m1*12,w1==null?null:w1*52];}
 
-function getVerdict(signals){if(!signals||!signals.length)return{label:'LOADING',color:'#556677',bg:'#11182700'};var bull=0,bear=0;signals.forEach(function(s){var v=String(s.verdict);if(v.indexOf('BULL')!==-1||v.indexOf('RISK-ON')!==-1||v.indexOf('CALM')!==-1)bull++;if(v.indexOf('BEAR')!==-1||v.indexOf('RISK-OFF')!==-1||v.indexOf('FEAR')!==-1)bear++;});if(bull>=4)return{label:'RISK-ON',color:'#00dd88',bg:'#00dd8815'};if(bull>=3)return{label:'CONSTRUCTIVE',color:'#44ddaa',bg:'#44ddaa12'};if(bear>=3)return{label:'CAUTIOUS',color:'#ff8844',bg:'#ff884412'};if(bear>=4)return{label:'RISK-OFF',color:'#ff4444',bg:'#ff444415'};return{label:'MIXED',color:'#ffaa00',bg:'#ffaa0012'};}
+function getVerdict(signals){if(!signals||!signals.length)return{label:'LOADING',color:'#556677',bg:'#11182700'};var bull=0,bear=0;signals.forEach(function(s){var v=String(s.verdict);if(v.indexOf('BULL')!==-1||v.indexOf('RISK-ON')!==-1||v.indexOf('CALM')!==-1||v.indexOf('GLOBAL ON')!==-1)bull++;if(v.indexOf('BEAR')!==-1||v.indexOf('RISK-OFF')!==-1||v.indexOf('FEAR')!==-1)bear++;});if(bull>=4)return{label:'RISK-ON',color:'#00dd88',bg:'#00dd8815'};if(bull>=3)return{label:'CONSTRUCTIVE',color:'#44ddaa',bg:'#44ddaa12'};if(bear>=3)return{label:'CAUTIOUS',color:'#ff8844',bg:'#ff884412'};if(bear>=4)return{label:'RISK-OFF',color:'#ff4444',bg:'#ff444415'};return{label:'MIXED',color:'#ffaa00',bg:'#ffaa0012'};}
 
 // ═══ DATA LOADING ═══
 function loadData(){
@@ -311,7 +312,7 @@ function renderDashboard(v){
   html+='<div class="panel"><div class="phdr">STEP 1 — MARKET REGIME</div><div style="padding:8px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="width:9px;height:9px;border-radius:50%;background:'+v.color+';box-shadow:0 0 8px '+v.color+'"></div><span style="font-size:15px;font-weight:800;color:'+v.color+';letter-spacing:.8px">'+v.label+'</span></div>';
   html+='<table><thead><tr><th>SIGNAL</th><th>PROXY</th><th class="r">3M</th><th class="c">TREND</th><th class="r">VERDICT</th><th class="r">WT</th></tr></thead><tbody>';
   (d.regime.signals||[]).forEach(function(s){
-    html+='<tr><td style="font-weight:600;color:#c8d6e5">'+s.signal+'</td><td class="dim">'+s.proxy+'</td><td class="r" style="color:'+vc(s.m3)+'">'+pct(s.m3)+'</td><td class="c" style="color:'+tc(s.trend)+';font-size:13px">'+s.trend+'</td><td class="r" style="color:'+rc(s.verdict)+';font-weight:600;font-size:10px">'+s.verdict+'</td><td class="r dimx">'+s.weight+'</td></tr>';
+    html+='<tr><td style="font-weight:600;color:#c8d6e5">'+s.signal+'</td><td class="dim">'+s.proxy+'</td><td class="r" style="color:'+vc(s.m3)+'">'+pct(s.m3)+'</td><td class="c" style="color:'+tc(s.trend)+';font-size:13px">'+s.trend+'</td><td class="r" style="color:'+rc(s.verdict)+';font-weight:600;font-size:10px">'+s.verdict+'</td><td class="r dimx">'+wt(s.weight)+'</td></tr>';
   });
   html+='</tbody></table></div></div>';
 
