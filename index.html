@@ -271,6 +271,17 @@ function renderDashboard(v){
     html+='<tr><td style="font-weight:600;color:#c8d6e5">'+s.signal+'</td><td class="dim">'+s.proxy+'</td><td class="r" style="color:'+vc(s.m3)+'">'+pct(s.m3)+'</td><td class="c" style="color:'+tc(s.trend)+';font-size:13px">'+s.trend+'</td><td class="r"><span style="color:'+rc(s.verdict)+';font-weight:600;font-size:10px;background:'+rc(s.verdict)+'15;padding:1px 5px;border-radius:3px">'+s.verdict+'</span></td><td class="r dimx">'+wt(s.weight)+'</td></tr>';
   });
   html+='</tbody></table></div></div>';
+  // ── CHART PANEL — left col, only visible when drill is open ──
+  if(S.drillSector){
+    var chartTkr = S.chartTicker || S.drillSector;
+    html+='<div class="panel" style="display:flex;flex-direction:column">';
+    html+='<div class="phdr" style="display:flex;align-items:center;justify-content:space-between">';
+    html+='<span><span style="color:#ff8800;font-weight:700">'+chartTkr+'</span><span style="color:#445566;margin-left:6px;font-size:8px">via TradingView</span></span>';
+    html+='<span style="color:#334455;font-size:7px">click a row in the table to switch ticker</span>';
+    html+='</div>';
+    html+='<div id="tv_chart" style="flex:1;min-height:360px"></div>';
+    html+='</div>';
+  }
   // ════ SECTOR HEATMAP ════
   html+='<div class="panel"><div class="phdr">STEP 2 — SECTOR CONVICTION HEATMAP <span style="color:#334455;font-weight:400">click to drill down</span></div><div class="heatgrid" id="heatgrid">';
   (d.sectorMap.sectors||[]).forEach(function(s,idx){
@@ -299,15 +310,7 @@ function renderDashboard(v){
     var chartTkr = S.chartTicker || S.drillSector;
     html+='<div class="drill-panel">';
     html+='<div class="drill-hdr"><div><span class="drill-title">▸ '+S.drillSector+' — '+secName+' SUB-INDUSTRIES</span><span class="drill-count">'+subs.length+' ETFs</span></div><button class="drill-close" onclick="toggleDrill(null)">✕ CLOSE</button></div>';
-    html+='<div class="drill-body">';
-    // LEFT — TradingView chart
-    html+='<div class="drill-chart-side">';
-    html+='<div class="drill-chart-hdr"><span class="ctkr">'+chartTkr+'</span><span style="color:#445566;margin-left:4px;font-size:8px">via TradingView</span><span class="csub">click row to switch ↓</span></div>';
-    html+='<div id="tv_chart"></div>';
-    html+='</div>';
-    // RIGHT — sub-ETF table
-    html+='<div class="drill-table-side">';
-    html+='<table><thead><tr><th class="r">#</th><th>TICKER</th><th>NAME</th><th>SUB</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="r">vs SPY</th><th class="r">vs SECTOR</th><th class="c">SPARK</th><th class="r">QUAD</th></tr></thead><tbody>';
+    html+='<div style="overflow-x:auto"><table><thead><tr><th class="r">#</th><th>TICKER</th><th>NAME</th><th>SUB</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="r">vs SPY</th><th class="r">vs SECTOR</th><th class="c">SPARK</th><th class="r">QUAD</th></tr></thead><tbody>';
     subs.forEach(function(u,i){
       var isLeading = String(u.quadrant).indexOf('LEADING')!==-1;
       var rowBg = isLeading ? 'background:#00dd8808' : '';
@@ -326,10 +329,7 @@ function renderDashboard(v){
       html+='<td class="r" style="color:'+qc(u.quadrant)+';font-size:9px">'+u.quadrant+'</td>';
       html+='</tr>';
     });
-    html+='</tbody></table>';
-    html+='</div>'; // close drill-table-side
-    html+='</div>'; // close drill-body
-    html+='</div>'; // close drill-panel
+    html+='</tbody></table></div></div>';
   }
   html+='</div>'; // close heatmap panel
   // ════ ROTATION — ALL 3 SECTIONS ════
@@ -486,9 +486,12 @@ function selectChartTicker(ticker) {
   document.querySelectorAll('.drill-row').forEach(function(r){
     r.classList.toggle('active-chart', r.getAttribute('data-ticker') === ticker);
   });
-  // Update the label in the chart header
-  var lbl = document.querySelector('.drill-chart-hdr .ctkr');
-  if (lbl) lbl.textContent = ticker;
+  // Update the ticker label in the chart panel header
+  var lbl = document.querySelector('#tv_chart').previousElementSibling;
+  if (lbl) {
+    var span = lbl.querySelector('span span');
+    if (span) span.textContent = ticker;
+  }
   initTVChart(ticker);
 }
 // ═══════════════════════════════════════════════════════
