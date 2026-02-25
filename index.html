@@ -271,18 +271,7 @@ function renderDashboard(v){
     html+='<tr><td style="font-weight:600;color:#c8d6e5">'+s.signal+'</td><td class="dim">'+s.proxy+'</td><td class="r" style="color:'+vc(s.m3)+'">'+pct(s.m3)+'</td><td class="c" style="color:'+tc(s.trend)+';font-size:13px">'+s.trend+'</td><td class="r"><span style="color:'+rc(s.verdict)+';font-weight:600;font-size:10px;background:'+rc(s.verdict)+'15;padding:1px 5px;border-radius:3px">'+s.verdict+'</span></td><td class="r dimx">'+wt(s.weight)+'</td></tr>';
   });
   html+='</tbody></table></div></div>';
-  // ── CHART PANEL — left col, only visible when drill is open ──
-  if(S.drillSector){
-    var chartTkr = S.chartTicker || S.drillSector;
-    html+='<div class="panel" style="display:flex;flex-direction:column">';
-    html+='<div class="phdr" style="display:flex;align-items:center;justify-content:space-between">';
-    html+='<span><span style="color:#ff8800;font-weight:700">'+chartTkr+'</span><span style="color:#445566;margin-left:6px;font-size:8px">via TradingView</span></span>';
-    html+='<span style="color:#334455;font-size:7px">click a row in the table to switch ticker</span>';
-    html+='</div>';
-    html+='<div id="tv_chart" style="flex:1;min-height:360px"></div>';
-    html+='</div>';
-  }
-  // ════ SECTOR HEATMAP ════
+  // ════ SECTOR HEATMAP — always col2, row1 ════
   html+='<div class="panel"><div class="phdr">STEP 2 — SECTOR CONVICTION HEATMAP <span style="color:#334455;font-weight:400">click to drill down</span></div><div class="heatgrid" id="heatgrid">';
   (d.sectorMap.sectors||[]).forEach(function(s,idx){
     var isActive = S.drillSector === s.ticker;
@@ -295,20 +284,28 @@ function renderDashboard(v){
     html+='<span class="cv" style="color:'+vc(s.conviction)+'">'+pct(s.conviction)+'</span>';
     html+='<span class="qd" style="color:'+qc(s.quadrant)+'">'+s.quadrant+'</span>';
     html+='<div class="sub"><span style="color:'+vc(s.rs_1w)+'">1W:'+pct(s.rs_1w,0)+'</span><span style="color:'+vc(s.rs_1m)+'">1M:'+pct(s.rs_1m,0)+'</span></div>';
-    // Verdict badge
     if(s.verdict){html+='<span class="vdict" style="color:'+verdictColor(s.verdict)+'">'+s.verdict+'</span>';}
     if(drillCount>0) html+='<span class="drill-hint">'+drillCount+' sub-ETFs ▾</span>';
     html+='</div>';
   });
-  html+='</div>';
-  // ── DRILL-DOWN (inline below heatmap) ──
+  html+='</div></div>'; // close heatgrid + heatmap panel
+  // ── ROW 2: Chart (col1) + Drill table (col2) — only when a sector is selected ──
   if(S.drillSector && d.drillDown && d.drillDown[S.drillSector]){
     var subs = d.drillDown[S.drillSector];
     var secInfo = null;
     (d.sectorMap.sectors||[]).forEach(function(s){ if(s.ticker===S.drillSector) secInfo=s; });
     var secName = secInfo ? secInfo.name : S.drillSector;
     var chartTkr = S.chartTicker || S.drillSector;
-    html+='<div class="drill-panel">';
+    // LEFT — TradingView chart panel (col1, row2)
+    html+='<div class="panel" style="display:flex;flex-direction:column">';
+    html+='<div class="phdr" style="display:flex;align-items:center;justify-content:space-between">';
+    html+='<span><span style="color:#ff8800;font-weight:700">'+chartTkr+'</span><span style="color:#445566;margin-left:6px;font-size:8px">via TradingView</span></span>';
+    html+='<span style="color:#334455;font-size:7px">click a row to switch ticker</span>';
+    html+='</div>';
+    html+='<div id="tv_chart" style="flex:1;min-height:360px"></div>';
+    html+='</div>';
+    // RIGHT — Sub-ETF drill table (col2, row2)
+    html+='<div class="panel drill-panel">';
     html+='<div class="drill-hdr"><div><span class="drill-title">▸ '+S.drillSector+' — '+secName+' SUB-INDUSTRIES</span><span class="drill-count">'+subs.length+' ETFs</span></div><button class="drill-close" onclick="toggleDrill(null)">✕ CLOSE</button></div>';
     html+='<div style="overflow-x:auto"><table><thead><tr><th class="r">#</th><th>TICKER</th><th>NAME</th><th>SUB</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="r">vs SPY</th><th class="r">vs SECTOR</th><th class="c">SPARK</th><th class="r">QUAD</th></tr></thead><tbody>';
     subs.forEach(function(u,i){
@@ -318,8 +315,8 @@ function renderDashboard(v){
       html+='<tr class="drill-row'+(isActive?' active-chart':'')+'" data-ticker="'+u.ticker+'" onclick="selectChartTicker(\''+u.ticker+'\')" style="'+rowBg+'">';
       html+='<td class="r dimx">'+u.rank+'</td>';
       html+='<td class="tk">'+u.ticker+'</td>';
-      html+='<td class="dim" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+u.name+'</td>';
-      html+='<td class="dim" style="font-size:8px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(u.sub||'')+'</td>';
+      html+='<td class="dim" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+u.name+'</td>';
+      html+='<td class="dim" style="font-size:8px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(u.sub||'')+'</td>';
       html+='<td class="r" style="color:'+vc(u.rs1w)+'">'+pct(u.rs1w)+'</td>';
       html+='<td class="r" style="color:'+vc(u.rs1m)+'">'+pct(u.rs1m)+'</td>';
       html+='<td class="r" style="color:'+vc(u.rs3m)+'">'+pct(u.rs3m)+'</td>';
@@ -331,7 +328,6 @@ function renderDashboard(v){
     });
     html+='</tbody></table></div></div>';
   }
-  html+='</div>'; // close heatmap panel
   // ════ ROTATION — ALL 3 SECTIONS ════
   html+='<div class="panel"><div class="phdr">STEP 4 — ROTATION INTELLIGENCE</div>';
   // Section 1: Risk Regime Pairs
