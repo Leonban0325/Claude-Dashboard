@@ -145,7 +145,8 @@ var S = {
   drillSector: null, chartTicker: null,
   changesOpen: true
 };
-var _tvWidget = null, _tvRetries = 0;
+var _tvWidget = null, _tvRetries = 0, _tvFallbackTimer = null, _tvCurrentTicker = null;
+var TV_EXCHANGES = ['AMEX', 'NYSE', 'NASDAQ', 'CBOE', ''];
 var TABS = ['DASHBOARD','UNIVERSE','RATIOS','BREADTH'];
 // ═══ HELPERS ═══
 function pct(v,d){if(v==null||isNaN(v))return'—';d=d||1;return(v*100).toFixed(d)+'%';}
@@ -447,20 +448,18 @@ function renderChanges(d){
 // ═══════════════════════════════════════════════════════
 // TRADINGVIEW CHART
 // ═══════════════════════════════════════════════════════
-function initTVChart(ticker) {
-  if (!ticker) return;
+function _tryTVExchange(ticker, exIdx) {
   var el = document.getElementById('tv_chart');
-  if (!el) { _tvRetries = 0; return; }
-  if (typeof TradingView === 'undefined') {
-    if (_tvRetries < 12) { _tvRetries++; setTimeout(function(){ initTVChart(ticker); }, 500); }
-    return;
-  }
-  _tvRetries = 0;
+  if (!el || _tvCurrentTicker !== ticker) return;
+  if (_tvWidget) { try { _tvWidget.remove(); } catch(e){} _tvWidget = null; }
   el.innerHTML = '';
+  var prefix = TV_EXCHANGES[exIdx];
+  var symbol = prefix ? (prefix + ':' + ticker) : ticker;
+  var hasMore = exIdx + 1 < TV_EXCHANGES.length;
   try {
     _tvWidget = new TradingView.widget({
       autosize: true,
-      symbol: 'AMEX:' + ticker,
+      symbol: symbol,
       interval: 'D',
       timezone: 'exchange',
       theme: 'dark',
@@ -476,9 +475,35 @@ function initTVChart(ticker) {
         { id: 'MASimple@tv-basicstudies', inputs: { length: 200 } }
       ]
     });
+    // onChartReady = symbol resolved, cancel fallback
+    if (_tvWidget && typeof _tvWidget.onChartReady === 'function') {
+      _tvWidget.onChartReady(function() {
+        if (_tvFallbackTimer) { clearTimeout(_tvFallbackTimer); _tvFallbackTimer = null; }
+      });
+    }
+    // If more exchanges remain, try next after timeout
+    if (hasMore) {
+      _tvFallbackTimer = setTimeout(function() {
+        if (_tvCurrentTicker === ticker) { _tryTVExchange(ticker, exIdx + 1); }
+      }, 4000);
+    }
   } catch(e) {
-    if (el) el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#334455;font-size:10px">Chart unavailable</div>';
+    if (hasMore) { setTimeout(function(){ _tryTVExchange(ticker, exIdx + 1); }, 300); }
+    else if (el) { el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#334455;font-size:10px">Chart unavailable</div>'; }
   }
+}
+function initTVChart(ticker) {
+  if (!ticker) return;
+  _tvCurrentTicker = ticker;
+  if (_tvFallbackTimer) { clearTimeout(_tvFallbackTimer); _tvFallbackTimer = null; }
+  var el = document.getElementById('tv_chart');
+  if (!el) return;
+  if (typeof TradingView === 'undefined') {
+    if (_tvRetries < 12) { _tvRetries++; setTimeout(function(){ initTVChart(ticker); }, 500); }
+    return;
+  }
+  _tvRetries = 0;
+  _tryTVExchange(ticker, 0);
 }
 function selectChartTicker(ticker) {
   S.chartTicker = ticker;
