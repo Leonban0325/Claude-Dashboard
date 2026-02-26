@@ -469,7 +469,12 @@ function initTVChart(ticker) {
       enable_publishing: false,
       hide_side_toolbar: true,
       allow_symbol_change: false,
-      container_id: 'tv_chart'
+      container_id: 'tv_chart',
+      studies: [
+        { id: 'MASimple@tv-basicstudies', inputs: { length: 50 } },
+        { id: 'MASimple@tv-basicstudies', inputs: { length: 100 } },
+        { id: 'MASimple@tv-basicstudies', inputs: { length: 200 } }
+      ]
     });
   } catch(e) {
     if (el) el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#334455;font-size:10px">Chart unavailable</div>';
