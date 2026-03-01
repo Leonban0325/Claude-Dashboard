@@ -140,6 +140,19 @@ tr:hover{background:#ffffff05}
 .prof-btn:hover{background:#1a2744;color:#00dd88}
 /* ── Bottom 10 ── */
 .bot10-row{border-left:2px solid #ff555544}
+/* ── Region / Theme heatmap grid ── */
+.region-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:5px;padding:8px}
+.rtile{border:1px solid #1a223355;border-radius:4px;padding:6px 8px;cursor:pointer;transition:all .15s}
+.rtile:hover{border-color:#ffffff22;transform:translateY(-1px)}
+.rtile.active{border-color:#ff880088;box-shadow:0 0 10px #ff880022}
+.rtile .rt-region{font-size:9px;font-weight:700;color:#e8f0ff;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rtile .rt-rs{font-size:13px;font-weight:800}
+.rtile .rt-meta{font-size:7px;color:#556677;margin-top:1px}
+/* ── Hot/Cold theme pills ── */
+.theme-bar{display:flex;flex-wrap:wrap;gap:5px;padding:8px 10px;border-bottom:1px solid #1a2233;align-items:center}
+.tpill{padding:3px 8px;border-radius:12px;font-size:9px;font-weight:700;cursor:pointer;transition:all .15s;border:1px solid transparent}
+.tpill:hover{filter:brightness(1.2)}
+.tpill.active{border-color:#ff8800!important}
 </style>
 <script src="https://s3.tradingview.com/tv.js"></script>
 </head>
@@ -169,7 +182,9 @@ var S = {
   ratioTab:'riskOnOff',
   drillSector: null, chartTicker: null,
   changesOpen: true,
-  profileTicker: null, bottomOpen: false
+  profileTicker: null, bottomOpen: false,
+  globalRegion:'ALL', globalSearch:'', globalSort:'rank', globalSortDir:'asc',
+  themeFilter:'ALL', themeSearch:'', themeSort:'rank', themeSortDir:'asc'
 };
 var _tvWidget = null, _tvRetries = 0;
 var EXCHANGE_MAP = {
@@ -245,7 +260,7 @@ var EXCHANGE_MAP = {
   IEZ:'AMEX',XES:'AMEX',BLOK:'AMEX',WCLD:'AMEX'
 };
 function tvSymbol(ticker) { var ex = EXCHANGE_MAP[ticker] || 'AMEX'; return ex + ':' + ticker; }
-var TABS = ['DASHBOARD','UNIVERSE','RATIOS','BREADTH'];
+var TABS = ['DASHBOARD','UNIVERSE','RATIOS','BREADTH','GLOBAL','THEMATIC'];
 // ═══ HELPERS ═══
 function pct(v,d){if(v==null||isNaN(v))return'—';d=d||1;return(v*100).toFixed(d)+'%';}
 function vc(v){if(v==null||isNaN(v))return'#555';return v>0?'#00dd88':v<0?'#ff5555':'#778';}
@@ -321,6 +336,8 @@ function render(){
   else if(S.tab==='UNIVERSE')renderUniverse();
   else if(S.tab==='RATIOS')renderRatios();
   else if(S.tab==='BREADTH')renderBreadth();
+  else if(S.tab==='GLOBAL')renderGlobal();
+  else if(S.tab==='THEMATIC')renderThematic();
 }
 // ═══ ALERTS (ENHANCED) ═══
 function renderAlerts(){
@@ -494,6 +511,37 @@ function renderDashboard(v){
     html+='</tbody></table>';
   }
   html+='</div>';
+  // ════ PAIR ANALYSIS ════
+  if (d.pairAnalysis) {
+    var paSecs = [
+      {key:'sectorRotation',label:'SECTOR ROTATION',color:'#ff8800'},
+      {key:'industryDrillDown',label:'INDUSTRY DRILL-DOWN',color:'#44aaff'},
+      {key:'crossAsset',label:'CROSS-ASSET & THEMATIC',color:'#bb77dd'},
+      {key:'custom',label:'CUSTOM PAIRS',color:'#7a8899'}
+    ];
+    var hasPairs = paSecs.some(function(s){return (d.pairAnalysis[s.key]||[]).length>0;});
+    if (hasPairs) {
+      html+='<div class="panel">';
+      html+='<div class="phdr">PAIR ANALYSIS — Institutional Spreads</div>';
+      paSecs.forEach(function(sec) {
+        var pairs = d.pairAnalysis[sec.key] || [];
+        if (!pairs.length) return;
+        html+='<div class="sec-hdr top" style="color:'+sec.color+'">▸ '+sec.label+'</div>';
+        html+='<table><thead><tr><th>PAIR</th><th class="r">3M SPRD</th><th class="r">12M SPRD</th><th>DIVERGENCE</th></tr></thead><tbody>';
+        pairs.forEach(function(p) {
+          var dv = pairDivergence(p.spread3m, p.spread12m);
+          html+='<tr>';
+          html+='<td style="font-size:10px;font-weight:700"><span style="cursor:pointer;color:#e8f0ff" onclick="openProfile(\''+p.num+'\')">'+p.num+'</span><span style="color:#334455;font-size:9px"> / </span><span style="cursor:pointer;color:#c8d6e5" onclick="openProfile(\''+p.den+'\')">'+p.den+'</span></td>';
+          html+='<td class="r" style="color:'+vc(p.spread3m)+';font-weight:600">'+pct(p.spread3m)+'</td>';
+          html+='<td class="r" style="color:'+vc(p.spread12m)+';font-weight:600">'+pct(p.spread12m)+'</td>';
+          html+='<td style="color:'+dv.color+';font-size:9px;font-weight:600">'+dv.label+'</td>';
+          html+='</tr>';
+        });
+        html+='</tbody></table>';
+      });
+      html+='</div>';
+    }
+  }
   // ════ EMERGING ════
   html+='<div class="panel"><div class="phdr">STEP 5 — EMERGING STRENGTH (1W SURGE) <span style="color:#334455;font-weight:400">Who is getting strong NOW?</span></div><table><thead><tr><th>#</th><th>TICKER</th><th>NAME</th><th class="r">RS 1W</th><th class="r">COMP RS</th><th class="r">RK</th><th class="r">NOTE</th></tr></thead><tbody>';
   (d.emerging||[]).slice(0,12).forEach(function(e){
@@ -733,6 +781,169 @@ function renderUniverse(){
   document.getElementById('main').innerHTML=html;
 }
 function uSort(col){if(S.sortCol===col)S.sortDir=S.sortDir==='asc'?'desc':'asc';else{S.sortCol=col;S.sortDir=col==='rank'?'asc':'desc';}renderUniverse();}
+// ═══════════════════════════════════════════════════════
+// GLOBAL FLOWS
+// ═══════════════════════════════════════════════════════
+function pairDivergence(s3, s12) {
+  if (s3==null||s12==null) return {label:'—',color:'#555'};
+  if (s3>0.03&&s12>0.03) return {label:'✦ confirmed',color:'#00dd88'};
+  if (s3>0&&s12>0&&s3<s12*0.5) return {label:'▼ weakening',color:'#ff8844'};
+  if (s3>0&&s12>0) return {label:'▲ leading',color:'#44aaff'};
+  if (s3>0&&s12<0) return {label:'↗ turning',color:'#44aaff'};
+  if (s3<-0.03&&s12<-0.03) return {label:'▼ lagging',color:'#ff5555'};
+  if (s3<0&&s12>0) return {label:'↘ fading',color:'#ff8844'};
+  if (s3<0) return {label:'▼ lagging',color:'#ff5555'};
+  return {label:'— flat',color:'#888'};
+}
+function renderGlobal() {
+  var d = S.data;
+  var rows = d.globalFlows || [];
+  // Build region aggregates
+  var regionMap = {};
+  rows.forEach(function(r) {
+    var cat = r.category || 'Other';
+    if (!regionMap[cat]) regionMap[cat] = {region:cat, etfs:[], totalRS:0, count:0, bestETF:null, bestRS:-Infinity};
+    regionMap[cat].etfs.push(r);
+    if (r.composite!=null) { regionMap[cat].totalRS+=r.composite; regionMap[cat].count++; }
+    if (r.composite!=null&&r.composite>regionMap[cat].bestRS) { regionMap[cat].bestRS=r.composite; regionMap[cat].bestETF=r.ticker; }
+  });
+  var regions = Object.keys(regionMap).sort();
+  var html = '';
+  // Section 1: Region heatmap
+  html+='<div class="panel" style="margin-bottom:10px"><div class="phdr">GLOBAL FLOWS — INTERNATIONAL CAPITAL FLOWS <span style="color:#334455;font-weight:400">'+rows.length+' ETFs · click region to filter</span></div>';
+  html+='<div class="region-grid">';
+  regions.forEach(function(reg) {
+    var rm = regionMap[reg];
+    var avgRS = rm.count>0 ? rm.totalRS/rm.count : 0;
+    var isActive = S.globalRegion===reg;
+    html+='<div class="rtile'+(isActive?' active':'')+'" style="background:'+hc(avgRS)+'" onclick="S.globalRegion=S.globalRegion===\''+reg+'\'?\'ALL\':\''+reg+'\';renderGlobal()">';
+    html+='<div class="rt-region">'+reg+'</div>';
+    html+='<div class="rt-rs" style="color:'+vc(avgRS)+'">'+pct(avgRS)+'</div>';
+    html+='<div class="rt-meta">'+rm.etfs.length+' ETFs · '+( rm.bestETF||'—')+'</div>';
+    html+='</div>';
+  });
+  html+='</div></div>';
+  // Filter + sort
+  var filtered = rows.filter(function(r) {
+    if (S.globalRegion!=='ALL'&&r.category!==S.globalRegion) return false;
+    if (S.globalSearch) { var s=S.globalSearch.toLowerCase(); if(r.ticker.toLowerCase().indexOf(s)===-1&&r.name.toLowerCase().indexOf(s)===-1&&(r.category||'').toLowerCase().indexOf(s)===-1) return false; }
+    return true;
+  });
+  filtered.sort(function(a,b) {
+    var va=a[S.globalSort],vb=b[S.globalSort];
+    if(va==null)return 1;if(vb==null)return -1;
+    if(typeof va==='string')return S.globalSortDir==='asc'?va.localeCompare(vb):vb.localeCompare(va);
+    return S.globalSortDir==='asc'?va-vb:vb-va;
+  });
+  var regionOpts=['ALL'].concat(regions);
+  html+='<div style="display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap;align-items:center">';
+  html+='<input class="search" id="gsearch" value="'+S.globalSearch+'" placeholder="Search ETFs by ticker, name, region..." oninput="S.globalSearch=this.value;renderGlobal()">';
+  html+='<select class="filt" onchange="S.globalRegion=this.value;renderGlobal()">';
+  regionOpts.forEach(function(r){html+='<option value="'+r+'"'+(S.globalRegion===r?' selected':'')+'>'+r+'</option>';});
+  html+='</select>';
+  html+='<span style="color:#445566;font-size:9px;margin-left:6px">'+filtered.length+' results</span></div>';
+  function gthc(col,lbl,cls){var arr=S.globalSort===col?(S.globalSortDir==='asc'?' ↑':' ↓'):'';var act=S.globalSort===col?' on':'';return'<th class="'+(cls||'')+act+'" onclick="gSort(\''+col+'\')">'+lbl+arr+'</th>';}
+  html+='<div class="panel"><div style="overflow-x:auto"><table><thead><tr>';
+  html+=gthc('rank','#','r')+gthc('ticker','TICKER')+gthc('name','NAME')+gthc('category','REGION')+gthc('sub','SUB');
+  html+=gthc('rs1w','1W','r')+gthc('rs1m','1M','r')+gthc('rs3m','3M','r')+gthc('composite','RS vs SPY','r');
+  html+=gthc('momentum','MOM','r')+gthc('rotation','ROTATION','r')+'<th class="c">SPARK</th>'+gthc('quadrant','QUAD','r');
+  html+='</tr></thead><tbody>';
+  filtered.forEach(function(r) {
+    html+='<tr>';
+    html+='<td class="r dimx">'+r.rank+'</td>';
+    html+='<td class="tk" style="cursor:pointer" onclick="openProfile(\''+r.ticker+'\')">'+r.ticker+'</td>';
+    html+='<td class="dim" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.name+'</td>';
+    html+='<td class="dim" style="font-size:9px">'+r.category+'</td>';
+    html+='<td class="dimx" style="font-size:8px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(r.sub||'')+'</td>';
+    html+='<td class="r" style="color:'+vc(r.rs1w)+'">'+pct(r.rs1w)+'</td>';
+    html+='<td class="r" style="color:'+vc(r.rs1m)+'">'+pct(r.rs1m)+'</td>';
+    html+='<td class="r" style="color:'+vc(r.rs3m)+'">'+pct(r.rs3m)+'</td>';
+    html+='<td class="r" style="font-weight:700;color:'+vc(r.composite)+'">'+pct(r.composite)+'</td>';
+    html+='<td class="r" style="color:'+vc(r.momentum)+'">'+pct(r.momentum)+'</td>';
+    html+='<td class="r" style="color:'+qc(r.rotation)+';font-size:9px">'+r.rotation+'</td>';
+    html+='<td class="c">'+spark(ann(r.rs1w,r.rs1m,r.rs3m,r.rs6m,r.rs12m))+'</td>';
+    html+='<td class="r" style="color:'+qc(r.quadrant)+';font-size:9px">'+r.quadrant+'</td>';
+    html+='</tr>';
+  });
+  html+='</tbody></table></div></div>';
+  document.getElementById('main').innerHTML=html;
+}
+function gSort(col){if(S.globalSort===col)S.globalSortDir=S.globalSortDir==='asc'?'desc':'asc';else{S.globalSort=col;S.globalSortDir=col==='rank'?'asc':'desc';}renderGlobal();}
+// ═══════════════════════════════════════════════════════
+// THEMATIC RADAR
+// ═══════════════════════════════════════════════════════
+function renderThematic() {
+  var d = S.data;
+  var rows = d.thematic || [];
+  // Build theme groups
+  var themeMap = {};
+  rows.forEach(function(r) {
+    var cat = r.category || 'Other';
+    if (!themeMap[cat]) themeMap[cat] = {theme:cat, etfs:[], totalRS:0, count:0};
+    themeMap[cat].etfs.push(r);
+    if (r.composite!=null) { themeMap[cat].totalRS+=r.composite; themeMap[cat].count++; }
+  });
+  var themes = Object.keys(themeMap).sort();
+  var hot=[], cold=[];
+  themes.forEach(function(t) {
+    var tm=themeMap[t]; tm.avgRS=tm.count>0?tm.totalRS/tm.count:0;
+    if(tm.avgRS>=0) hot.push(tm); else cold.push(tm);
+  });
+  hot.sort(function(a,b){return b.avgRS-a.avgRS;});
+  cold.sort(function(a,b){return a.avgRS-b.avgRS;});
+  var html = '';
+  // Hot/Cold summary
+  html+='<div class="panel" style="margin-bottom:10px"><div class="phdr">THEMATIC RADAR — THEME ROTATION <span style="color:#334455;font-weight:400">'+rows.length+' ETFs · click to filter</span></div>';
+  html+='<div class="theme-bar">';
+  if(hot.length){ html+='<span style="font-size:8px;font-weight:700;color:#00dd88;margin-right:2px">HOT</span>'; hot.forEach(function(tm){var isA=S.themeFilter===tm.theme;html+='<span class="tpill'+(isA?' active':'')+'" style="background:'+vc(tm.avgRS)+'22;color:'+vc(tm.avgRS)+';border-color:'+vc(tm.avgRS)+'44" onclick="S.themeFilter=S.themeFilter===\''+tm.theme+'\'?\'ALL\':\''+tm.theme+'\';renderThematic()">⚡ '+tm.theme+' '+pct(tm.avgRS,0)+'</span>';});}
+  if(cold.length){ html+='<span style="font-size:8px;font-weight:700;color:#ff5555;margin-left:8px;margin-right:2px">COLD</span>'; cold.forEach(function(tm){var isA=S.themeFilter===tm.theme;html+='<span class="tpill'+(isA?' active':'')+'" style="background:#ff444422;color:#ff8877;border-color:#ff555533" onclick="S.themeFilter=S.themeFilter===\''+tm.theme+'\'?\'ALL\':\''+tm.theme+'\';renderThematic()">❄ '+tm.theme+' '+pct(tm.avgRS,0)+'</span>';});}
+  html+='</div></div>';
+  // Filter + sort
+  var filtered = rows.filter(function(r) {
+    if(S.themeFilter!=='ALL'&&r.category!==S.themeFilter) return false;
+    if(S.themeSearch){var s=S.themeSearch.toLowerCase();if(r.ticker.toLowerCase().indexOf(s)===-1&&r.name.toLowerCase().indexOf(s)===-1&&(r.category||'').toLowerCase().indexOf(s)===-1)return false;}
+    return true;
+  });
+  filtered.sort(function(a,b){
+    var va=a[S.themeSort],vb=b[S.themeSort];
+    if(va==null)return 1;if(vb==null)return -1;
+    if(typeof va==='string')return S.themeSortDir==='asc'?va.localeCompare(vb):vb.localeCompare(va);
+    return S.themeSortDir==='asc'?va-vb:vb-va;
+  });
+  var themeOpts=['ALL'].concat(themes);
+  html+='<div style="display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap;align-items:center">';
+  html+='<input class="search" id="tsearch" value="'+S.themeSearch+'" placeholder="Search themes, tickers, ETFs..." oninput="S.themeSearch=this.value;renderThematic()">';
+  html+='<select class="filt" onchange="S.themeFilter=this.value;renderThematic()">';
+  themeOpts.forEach(function(t){html+='<option value="'+t+'"'+(S.themeFilter===t?' selected':'')+'>'+t+'</option>';});
+  html+='</select>';
+  html+='<span style="color:#445566;font-size:9px;margin-left:6px">'+filtered.length+' results</span></div>';
+  function tthc(col,lbl,cls){var arr=S.themeSort===col?(S.themeSortDir==='asc'?' ↑':' ↓'):'';var act=S.themeSort===col?' on':'';return'<th class="'+(cls||'')+act+'" onclick="tSort(\''+col+'\')">'+lbl+arr+'</th>';}
+  html+='<div class="panel"><div style="overflow-x:auto"><table><thead><tr>';
+  html+=tthc('rank','#','r')+tthc('ticker','TICKER')+tthc('name','NAME')+tthc('category','THEME')+tthc('sub','SUB');
+  html+=tthc('rs1w','1W','r')+tthc('rs1m','1M','r')+tthc('rs3m','3M','r')+tthc('composite','RS vs SPY','r');
+  html+=tthc('momentum','MOM','r')+tthc('rotation','ROTATION','r')+'<th class="c">SPARK</th>'+tthc('quadrant','QUAD','r');
+  html+='</tr></thead><tbody>';
+  filtered.forEach(function(r) {
+    html+='<tr>';
+    html+='<td class="r dimx">'+r.rank+'</td>';
+    html+='<td class="tk" style="cursor:pointer" onclick="openProfile(\''+r.ticker+'\')">'+r.ticker+'</td>';
+    html+='<td class="dim" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.name+'</td>';
+    html+='<td class="dim" style="font-size:9px">'+r.category+'</td>';
+    html+='<td class="dimx" style="font-size:8px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(r.sub||'')+'</td>';
+    html+='<td class="r" style="color:'+vc(r.rs1w)+'">'+pct(r.rs1w)+'</td>';
+    html+='<td class="r" style="color:'+vc(r.rs1m)+'">'+pct(r.rs1m)+'</td>';
+    html+='<td class="r" style="color:'+vc(r.rs3m)+'">'+pct(r.rs3m)+'</td>';
+    html+='<td class="r" style="font-weight:700;color:'+vc(r.composite)+'">'+pct(r.composite)+'</td>';
+    html+='<td class="r" style="color:'+vc(r.momentum)+'">'+pct(r.momentum)+'</td>';
+    html+='<td class="r" style="color:'+qc(r.rotation)+';font-size:9px">'+r.rotation+'</td>';
+    html+='<td class="c">'+spark(ann(r.rs1w,r.rs1m,r.rs3m,r.rs6m,r.rs12m))+'</td>';
+    html+='<td class="r" style="color:'+qc(r.quadrant)+';font-size:9px">'+r.quadrant+'</td>';
+    html+='</tr>';
+  });
+  html+='</tbody></table></div></div>';
+  document.getElementById('main').innerHTML=html;
+}
+function tSort(col){if(S.themeSort===col)S.themeSortDir=S.themeSortDir==='asc'?'desc':'asc';else{S.themeSort=col;S.themeSortDir=col==='rank'?'asc':'desc';}renderThematic();}
 // ═══ RATIOS ═══
 function renderRatios(){
   var d=S.data;var tabs=[['riskOnOff','RISK ON/OFF'],['credit','CREDIT'],['sectorLeadership','SECTOR LEADERSHIP'],['inflation','INFLATION'],['globalMacro','GLOBAL MACRO']];
@@ -917,6 +1128,8 @@ document.addEventListener('keydown',function(e){
   if(e.key==='Escape'){ closeProfile(); }
   if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();S.tab='UNIVERSE';render();setTimeout(function(){var el=document.getElementById('usearch');if(el)el.focus();},50);}
   if(e.key==='r'&&(e.metaKey||e.ctrlKey)){e.preventDefault();loadData();}
+  if((e.metaKey||e.ctrlKey)&&e.key==='g'){e.preventDefault();S.tab='GLOBAL';render();setTimeout(function(){var el=document.getElementById('gsearch');if(el)el.focus();},50);}
+  if(e.altKey&&e.key==='t'){e.preventDefault();S.tab='THEMATIC';render();setTimeout(function(){var el=document.getElementById('tsearch');if(el)el.focus();},50);}
 });
 // ═══ INIT ═══
 loadData();

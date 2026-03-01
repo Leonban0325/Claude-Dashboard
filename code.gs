@@ -42,6 +42,10 @@ function getData() {
   try { result.drillDown = buildDrillDown(ss, result.sectorMap); } catch(e) { result.drillDown = {}; }
   // ── Signal changes vs last snapshot ──
   try { result.changes = computeChanges(ss, result); } catch(e) { result.changes = {items:[],hasPrevious:false}; }
+  // ── New Sprint 2 data sources ──
+  try { result.globalFlows = parseGlobalFlows(ss); } catch(e) { result.globalFlows = []; }
+  try { result.thematic = parseThematicRadar(ss); } catch(e) { result.thematic = []; }
+  try { result.pairAnalysis = parsePairAnalysis(ss); } catch(e) { result.pairAnalysis = {sectorRotation:[],industryDrillDown:[],crossAsset:[],custom:[]}; }
   result.ts = new Date().toISOString();
   return JSON.stringify(result);
 }
@@ -600,4 +604,75 @@ function parseConviction(ss) {
     }
   }
   return { top: items, bottom: bottom };
+}
+// ── GLOBAL FLOWS ─────────────────────────────────────
+function parseGlobalFlows(ss) {
+  var d = readRange(ss, 'GLOBAL FLOWS', 'A1:X120');
+  var hdr = findRow(d, ['ETF', 'RS 1W']);
+  var items = [];
+  if (hdr >= 0) {
+    for (var i = hdr + 1; i < d.length; i++) {
+      if (!d[i][0]) break;
+      items.push({
+        ticker: String(d[i][0]),  name: String(d[i][1]),
+        category: String(d[i][2] || ''), sub: String(d[i][3] || ''),
+        rs1w: num(d[i][4]),  rs1m: num(d[i][5]),  rs3m: num(d[i][6]),
+        rs6m: num(d[i][7]),  rs12m: num(d[i][8]), rsYtd: num(d[i][9]),
+        composite: num(d[i][10]), rank: d[i][11], momentum: num(d[i][12]),
+        quadrant: String(d[i][13] || ''),
+        rk1w: d[i][15], rk1m: d[i][16], rk3m: d[i][17], rkYtd: d[i][18],
+        deltaWM: d[i][19], deltaMQ: d[i][20], deltaQY: d[i][21],
+        velocity: num(d[i][22]), rotation: String(d[i][23] || '')
+      });
+    }
+  }
+  return items;
+}
+// ── THEMATIC RADAR ────────────────────────────────────
+function parseThematicRadar(ss) {
+  var d = readRange(ss, 'THEMATIC RADAR', 'A1:X60');
+  var hdr = findRow(d, ['ETF', 'RS 1W']);
+  var items = [];
+  if (hdr >= 0) {
+    for (var i = hdr + 1; i < d.length; i++) {
+      if (!d[i][0]) break;
+      items.push({
+        ticker: String(d[i][0]),  name: String(d[i][1]),
+        category: String(d[i][2] || ''), sub: String(d[i][3] || ''),
+        rs1w: num(d[i][4]),  rs1m: num(d[i][5]),  rs3m: num(d[i][6]),
+        rs6m: num(d[i][7]),  rs12m: num(d[i][8]), rsYtd: num(d[i][9]),
+        composite: num(d[i][10]), rank: d[i][11], momentum: num(d[i][12]),
+        quadrant: String(d[i][13] || ''),
+        rk1w: d[i][15], rk1m: d[i][16], rk3m: d[i][17], rkYtd: d[i][18],
+        deltaWM: d[i][19], deltaMQ: d[i][20], deltaQY: d[i][21],
+        velocity: num(d[i][22]), rotation: String(d[i][23] || '')
+      });
+    }
+  }
+  return items;
+}
+// ── PAIR ANALYSIS ─────────────────────────────────────
+function parsePairAnalysis(ss) {
+  var d = readRange(ss, 'PAIR ANALYSIS', 'A1:J40');
+  var sections = { sectorRotation: [], industryDrillDown: [], crossAsset: [], custom: [] };
+  var currentKey = null;
+  for (var i = 0; i < d.length; i++) {
+    var cell = String(d[i][0]).toUpperCase();
+    if (cell.indexOf('▸') !== -1 || cell.indexOf('►') !== -1) {
+      if (cell.indexOf('SECTOR ROTATION') !== -1) currentKey = 'sectorRotation';
+      else if (cell.indexOf('INDUSTRY') !== -1) currentKey = 'industryDrillDown';
+      else if (cell.indexOf('CROSS') !== -1) currentKey = 'crossAsset';
+      else if (cell.indexOf('CUSTOM') !== -1) currentKey = 'custom';
+      continue;
+    }
+    if (String(d[i][1]).toUpperCase() === 'NUM') continue;
+    if (currentKey && d[i][1] && d[i][2]) {
+      sections[currentKey].push({
+        num: String(d[i][1]), den: String(d[i][2]), pair: String(d[i][3] || ''),
+        retNum3m: num(d[i][4]), retDen3m: num(d[i][5]), spread3m: num(d[i][6]),
+        retNum12m: num(d[i][7]), retDen12m: num(d[i][8]), spread12m: num(d[i][9])
+      });
+    }
+  }
+  return sections;
 }
