@@ -171,14 +171,80 @@ var S = {
   changesOpen: true,
   profileTicker: null, bottomOpen: false
 };
-var _tvWidget = null, _tvRetries = 0, _tvFallbackTimer = null, _tvCurrentTicker = null;
-var TV_EXCHANGES = ['AMEX', 'NYSE', 'NASDAQ', 'CBOE', ''];
-// Known NASDAQ-listed ETFs; all others default to AMEX (NYSE Arca)
-var TICKER_EXCHANGE = (function(){
-  var m = {};
-  ['QQQ','QQQM','QQQJ','ONEQ','TQQQ','SQQQ','QLD','PSQ','IBB','SMH','SOXX'].forEach(function(t){ m[t] = 'NASDAQ'; });
-  return m;
-}());
+var _tvWidget = null, _tvRetries = 0;
+var EXCHANGE_MAP = {
+  // ── Sector SPDR ──
+  XLE:'AMEX',XLF:'AMEX',XLK:'AMEX',XLV:'AMEX',XLI:'AMEX',XLY:'AMEX',
+  XLP:'AMEX',XLU:'AMEX',XLB:'AMEX',XLC:'AMEX',XLRE:'AMEX',
+  // ── iShares (most are AMEX/NYSE Arca) ──
+  IYZ:'AMEX',IYE:'AMEX',IYM:'AMEX',IYK:'AMEX',IYT:'AMEX',IYR:'AMEX',
+  IYH:'AMEX',IYW:'AMEX',IYC:'AMEX',IYF:'AMEX',IYG:'AMEX',IYJ:'AMEX',
+  IXC:'AMEX',IXN:'AMEX',IXP:'AMEX',IXJ:'AMEX',IXG:'AMEX',
+  IBB:'AMEX',IHI:'AMEX',IHE:'AMEX',IHF:'AMEX',IAI:'AMEX',IAK:'AMEX',
+  IAT:'AMEX',ITA:'AMEX',ICF:'AMEX',IDU:'AMEX',IDX:'AMEX',IGF:'AMEX',
+  IGM:'AMEX',IGV:'AMEX',ITB:'AMEX',
+  IBIT:'NASDAQ',IDEF:'AMEX',IDRV:'AMEX',IBRN:'AMEX',
+  INDA:'AMEX',INCO:'AMEX',ISRA:'AMEX',ICLN:'AMEX',IFRA:'AMEX',
+  ILF:'AMEX',
+  // ── Vanguard ──
+  VDE:'AMEX',VGT:'AMEX',VHT:'AMEX',VIS:'AMEX',VCR:'AMEX',VDC:'AMEX',
+  VPU:'AMEX',VAW:'AMEX',VOX:'AMEX',VFH:'AMEX',VNQ:'AMEX',VGK:'AMEX',
+  VNQI:'NASDAQ',
+  // ── Fidelity ──
+  FENY:'AMEX',FTEC:'AMEX',FHLC:'AMEX',FIDU:'AMEX',FDIS:'AMEX',
+  FSTA:'AMEX',FUTY:'AMEX',FMAT:'AMEX',FCOM:'AMEX',FREL:'AMEX',
+  FNCL:'AMEX',FBTC:'AMEX',FETH:'AMEX',FITE:'AMEX',FBT:'AMEX',
+  FDN:'AMEX',FAN:'AMEX',FIW:'AMEX',FINX:'AMEX',FTXL:'AMEX',
+  // ── SPDR (non-sector) ──
+  XOP:'AMEX',XHB:'AMEX',XBI:'AMEX',XRT:'AMEX',XAR:'AMEX',XME:'AMEX',
+  XSD:'AMEX',XTN:'AMEX',XHS:'AMEX',XHE:'AMEX',XPH:'AMEX',XSW:'AMEX',
+  // ── Invesco / PowerShares ──
+  PHO:'NASDAQ',PBJ:'AMEX',PBW:'AMEX',PPA:'AMEX',PEJ:'AMEX',
+  PSI:'AMEX',PAVE:'AMEX',PPH:'AMEX',PICK:'AMEX',PRNT:'AMEX',
+  // ── VanEck ──
+  SMH:'AMEX',GDX:'AMEX',GDXJ:'AMEX',SLX:'AMEX',MOO:'AMEX',
+  OIH:'AMEX',KRE:'AMEX',REMX:'AMEX',SLVP:'AMEX',GOEX:'AMEX',
+  // ── Global X ──
+  COPX:'AMEX',LIT:'AMEX',BOTZ:'AMEX',AIQ:'AMEX',SNSR:'AMEX',
+  HERO:'AMEX',DRIV:'AMEX',BUG:'AMEX',CLOU:'AMEX',HACK:'AMEX',
+  MLPA:'AMEX',SOCL:'AMEX',SIMS:'AMEX',EBIZ:'AMEX',
+  POTX:'AMEX',BETZ:'AMEX',GNOM:'AMEX',KURE:'AMEX',URNM:'AMEX',
+  // ── ARK ──
+  ARKK:'AMEX',ARKW:'AMEX',ARKG:'AMEX',ARKF:'AMEX',ARKQ:'AMEX',
+  ARKX:'AMEX',ARKB:'AMEX',
+  // ── Country / Regional ──
+  EWY:'AMEX',EWT:'AMEX',EWZ:'AMEX',EWJ:'AMEX',EWW:'AMEX',
+  DXJ:'AMEX',HEWJ:'AMEX',KSA:'AMEX',KWEB:'AMEX',CHIQ:'AMEX',
+  EUFN:'AMEX',EMXC:'AMEX',EMQQ:'NASDAQ',AFK:'AMEX',
+  SCJ:'AMEX',SMIN:'AMEX',
+  // ── Semiconductors ──
+  SOXX:'NASDAQ',SOXQ:'NASDAQ',SMHX:'NASDAQ',
+  // ── Crypto / Digital Assets ──
+  BITB:'AMEX',GBTC:'AMEX',ETHE:'AMEX',ETHA:'NASDAQ',
+  BKCH:'AMEX',MSOS:'AMEX',MJ:'AMEX',YOLO:'AMEX',DTCR:'AMEX',
+  // ── Thematic / Specialty ──
+  TAN:'AMEX',KGRN:'AMEX',WOOD:'AMEX',AQWA:'AMEX',CGW:'AMEX',
+  GRID:'AMEX',CNRG:'AMEX',QCLN:'NASDAQ',ACES:'AMEX',RNRG:'AMEX',
+  NLR:'AMEX',HYDR:'AMEX',CTEC:'AMEX',ZAP:'AMEX',
+  KOMP:'AMEX',ROKT:'AMEX',METV:'AMEX',ENFR:'AMEX',
+  DGIN:'AMEX',KARS:'AMEX',IDNA:'AMEX',AGNG:'AMEX',
+  CIBR:'AMEX',SKYY:'AMEX',AIPI:'NASDAQ',MILN:'AMEX',
+  LUXE:'AMEX',SHLD:'AMEX',LCTU:'AMEX',XNTK:'AMEX',
+  XITK:'AMEX',BJK:'AMEX',UFO:'AMEX',IBUY:'AMEX',
+  HEAL:'AMEX',HAIL:'AMEX',
+  // ── Real Estate ──
+  REET:'AMEX',RWR:'AMEX',REZ:'AMEX',REM:'AMEX',
+  // ── Infrastructure / MLPs ──
+  MLPX:'AMEX',AMLP:'AMEX',HEDJ:'AMEX',
+  // ── Broad / Multi ──
+  KBE:'AMEX',KCE:'AMEX',KIE:'AMEX',KXI:'AMEX',
+  RTH:'AMEX',RXI:'AMEX',JXI:'AMEX',
+  BBH:'AMEX',URA:'AMEX',SIL:'AMEX',RING:'AMEX',
+  ESGU:'AMEX',ESGV:'AMEX',SUSA:'AMEX',
+  VEGI:'AMEX',KROP:'AMEX',AIRR:'AMEX',MXI:'AMEX',EXI:'AMEX',
+  IEZ:'AMEX',XES:'AMEX',BLOK:'AMEX',WCLD:'AMEX'
+};
+function tvSymbol(ticker) { var ex = EXCHANGE_MAP[ticker] || 'AMEX'; return ex + ':' + ticker; }
 var TABS = ['DASHBOARD','UNIVERSE','RATIOS','BREADTH'];
 // ═══ HELPERS ═══
 function pct(v,d){if(v==null||isNaN(v))return'—';d=d||1;return(v*100).toFixed(d)+'%';}
@@ -559,18 +625,21 @@ function _addTVStudies(widget) {
     c.createStudy('Moving Average', false, false, { length: 200 }, { 'Plot.color': '#F44336', 'Plot.linewidth': 1 });
   } catch(e) {}
 }
-function _tryTVExchange(ticker, exIdx) {
+function initTVChart(ticker) {
+  if (!ticker) return;
   var el = document.getElementById('tv_chart');
-  if (!el || _tvCurrentTicker !== ticker) return;
+  if (!el) return;
+  if (typeof TradingView === 'undefined') {
+    if (_tvRetries < 12) { _tvRetries++; setTimeout(function(){ initTVChart(ticker); }, 500); }
+    return;
+  }
+  _tvRetries = 0;
   if (_tvWidget) { try { _tvWidget.remove(); } catch(e){} _tvWidget = null; }
   el.innerHTML = '';
-  var prefix = TV_EXCHANGES[exIdx];
-  var symbol = prefix ? (prefix + ':' + ticker) : ticker;
-  var hasMore = exIdx + 1 < TV_EXCHANGES.length;
   try {
     _tvWidget = new TradingView.widget({
       autosize: true,
-      symbol: symbol,
+      symbol: tvSymbol(ticker),
       interval: 'D',
       timezone: 'exchange',
       theme: 'dark',
@@ -582,37 +651,11 @@ function _tryTVExchange(ticker, exIdx) {
       container_id: 'tv_chart'
     });
     if (_tvWidget && typeof _tvWidget.onChartReady === 'function') {
-      _tvWidget.onChartReady(function() {
-        if (_tvFallbackTimer) { clearTimeout(_tvFallbackTimer); _tvFallbackTimer = null; }
-        _addTVStudies(_tvWidget);
-      });
-    }
-    // Fallback: only rotate if onChartReady never fired (symbol genuinely not on this exchange)
-    if (hasMore) {
-      _tvFallbackTimer = setTimeout(function() {
-        if (_tvCurrentTicker === ticker) { _tryTVExchange(ticker, exIdx + 1); }
-      }, 6000);
+      _tvWidget.onChartReady(function() { _addTVStudies(_tvWidget); });
     }
   } catch(e) {
-    if (hasMore) { setTimeout(function(){ _tryTVExchange(ticker, exIdx + 1); }, 300); }
-    else if (el) { el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#334455;font-size:10px">Chart unavailable</div>'; }
+    if (el) el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#334455;font-size:10px">Chart unavailable</div>';
   }
-}
-function initTVChart(ticker) {
-  if (!ticker) return;
-  _tvCurrentTicker = ticker;
-  if (_tvFallbackTimer) { clearTimeout(_tvFallbackTimer); _tvFallbackTimer = null; }
-  var el = document.getElementById('tv_chart');
-  if (!el) return;
-  if (typeof TradingView === 'undefined') {
-    if (_tvRetries < 12) { _tvRetries++; setTimeout(function(){ initTVChart(ticker); }, 500); }
-    return;
-  }
-  _tvRetries = 0;
-  // Start on the known correct exchange so rotation never triggers for known tickers
-  var exchange = TICKER_EXCHANGE[ticker.toUpperCase()] || 'AMEX';
-  var startIdx = TV_EXCHANGES.indexOf(exchange);
-  _tryTVExchange(ticker, startIdx < 0 ? 0 : startIdx);
 }
 function selectChartTicker(ticker) {
   S.chartTicker = ticker;
