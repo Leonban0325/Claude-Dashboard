@@ -37,7 +37,7 @@ function getData() {
   try { result.credit    = parseCredit(ss); }        catch(e) { result.credit    = {spreads:[]}; }
   try { result.equalWeight = parseEqualWeight(ss); } catch(e) { result.equalWeight = {gauges:[],sectorBreadth:[]}; }
   // ── Conviction picks (formula-driven sheet) ──
-  try { result.conviction = parseConviction(ss); } catch(e) { result.conviction = []; }
+  try { result.conviction = parseConviction(ss); } catch(e) { result.conviction = {top:[],bottom:[]}; }
   // ── Drill-down groups (INDUSTRY SCANNER with PARENT mapping) ──
   try { result.drillDown = buildDrillDown(ss, result.sectorMap); } catch(e) { result.drillDown = {}; }
   // ── Signal changes vs last snapshot ──
@@ -71,10 +71,10 @@ function buildSnapshot(data) {
     sectors: (data.sectorMap.sectors || []).map(function(s) {
       return { ticker: String(s.ticker), name: String(s.name), quadrant: String(s.quadrant), rank: s.rank, conviction: s.conviction };
     }),
-    top10: ((data.conviction && data.conviction.length ? data.conviction : data.universe) || []).slice(0, 10).map(function(u) {
+    top10: (((data.conviction && data.conviction.top && data.conviction.top.length) ? data.conviction.top : data.universe) || []).slice(0, 10).map(function(u) {
       return String(u.ticker);
     }),
-    top25: ((data.conviction && data.conviction.length ? data.conviction : data.universe) || []).slice(0, 25).map(function(u) {
+    top25: (((data.conviction && data.conviction.top && data.conviction.top.length) ? data.conviction.top : data.universe) || []).slice(0, 25).map(function(u) {
       return { ticker: String(u.ticker), rank: u.rank };
     }),
     rotations: (data.rotation.pairs || []).map(function(p) {
@@ -89,7 +89,7 @@ function snapshotSignals() {
   try { data.sectorMap = parseSectorMap(ss); }    catch(e) { data.sectorMap = {context:'',sectors:[]}; }
   try { data.universe  = parseUniverse(ss); }     catch(e) { data.universe  = []; }
   try { data.rotation  = parseRotation(ss); }     catch(e) { data.rotation  = {pairs:[],sectorSignals:[],creditHealth:[],creditVerdict:'',movers:[]}; }
-  try { data.conviction = parseConviction(ss); }  catch(e) { data.conviction = []; }
+  try { data.conviction = parseConviction(ss); }  catch(e) { data.conviction = {top:[],bottom:[]}; }
   var snapshot = buildSnapshot(data);
   var sheet = ss.getSheetByName('_SNAPSHOTS');
   if (!sheet) {
@@ -321,7 +321,17 @@ function parseRegime(ss) {
   }
   // D12 = row index 11, col D = index 3 (composite regime score, e.g. 0.047 = 4.7%)
   var score = (d.length > 11) ? num(d[11][3]) : null;
-  return { signals: signals, score: score };
+  // I12 = row index 11, col I = index 8 (full verdict string)
+  var verdictFull = (d.length > 11) ? String(d[11][8] || '') : '';
+  // Implications from rows 14-18 (0-indexed 13-17)
+  var implications = [];
+  for (var r = 13; r <= 17 && r < d.length; r++) {
+    var lbl = String(d[r][0] || '').trim();
+    var txt = String(d[r][1] || '').trim();
+    if (!txt) txt = String(d[r][2] || '').trim();
+    if (lbl) implications.push({ label: lbl, text: txt });
+  }
+  return { signals: signals, score: score, verdictFull: verdictFull, implications: implications };
 }
 // ── SECTOR MAP (EXTENDED to col O) ───────────────────
 function parseSectorMap(ss) {
@@ -563,5 +573,31 @@ function parseConviction(ss) {
       });
     }
   }
-  return items;
+  // ── Bottom 10 (weakest / short candidates) ──
+  var bottom = [];
+  var bot = findSection(d, 'BOTTOM 10');
+  if (bot >= 0) {
+    for (var i = bot + 1; i < d.length; i++) {
+      if (String(d[i][1]).toUpperCase() === 'TICKER') continue;
+      if (!d[i][1]) break;
+      bottom.push({
+        rank:            d[i][0],
+        ticker:          String(d[i][1]),
+        name:            String(d[i][2]),
+        type:            String(d[i][3]),
+        category:        String(d[i][4]),
+        composite:       num(d[i][5]),
+        percentile:      num(d[i][6]),
+        rs1w:            num(d[i][7]),
+        rs1m:            num(d[i][8]),
+        rs3m:            num(d[i][9]),
+        momentum:        num(d[i][10]),
+        accel:           num(d[i][11]),
+        quadrant:        String(d[i][12] || ''),
+        rotation:        String(d[i][13] || ''),
+        convictionLabel: String(d[i][14] || '')
+      });
+    }
+  }
+  return { top: items, bottom: bottom };
 }

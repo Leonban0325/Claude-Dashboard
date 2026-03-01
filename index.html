@@ -117,6 +117,29 @@ tr:hover{background:#ffffff05}
 .drill-row.active-chart .tk{color:#ff8800!important}
 /* ── Conviction label truncation ── */
 .cvlabel{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;display:inline-block}
+/* ── Profile slide-in panel ── */
+.profile-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:#00000055;z-index:199;opacity:0;pointer-events:none;transition:opacity .25s}
+.profile-backdrop.open{opacity:1;pointer-events:auto}
+.profile-overlay{position:fixed;top:0;right:0;bottom:0;width:380px;background:#0a0e17;border-left:1px solid #1a2233;z-index:200;overflow-y:auto;transform:translateX(100%);transition:transform .25s ease;box-shadow:-4px 0 24px #00000066}
+.profile-overlay.open{transform:translateX(0)}
+.prof-hdr{padding:10px 12px;border-bottom:1px solid #1a2233;display:flex;align-items:flex-start;justify-content:space-between}
+.prof-close{background:transparent;color:#556677;font-size:14px;padding:2px 6px;border-radius:3px;flex-shrink:0}
+.prof-close:hover{color:#ff5555;background:#ff555511}
+.prof-sec{margin:8px 10px;border:1px solid #1a2233;border-radius:5px;overflow:hidden}
+.prof-sec-hdr{padding:4px 8px;font-size:8px;font-weight:700;letter-spacing:.5px;color:#556677;background:#111827;border-bottom:1px solid #1a2233}
+.prof-sec-body{padding:6px 8px}
+.prof-row{display:flex;justify-content:space-between;padding:2px 0;font-size:10px}
+.prof-lbl{color:#556677}
+.prof-val{font-weight:600}
+.prof-bigrs{font-size:20px;font-weight:800;text-align:center;padding:6px 0}
+.prof-bar{height:6px;background:#1a2233;border-radius:3px;overflow:hidden;margin:4px 0}
+.prof-bar-fill{height:100%;border-radius:3px}
+.prof-peer{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #0f1724;font-size:10px}
+.prof-peer:last-child{border-bottom:none}
+.prof-btn{display:block;margin:10px;padding:8px;text-align:center;background:#111827;border:1px solid #1a2744;border-radius:4px;color:#44aaff;font-size:10px;font-weight:600;cursor:pointer}
+.prof-btn:hover{background:#1a2744;color:#00dd88}
+/* ── Bottom 10 ── */
+.bot10-row{border-left:2px solid #ff555544}
 </style>
 <script src="https://s3.tradingview.com/tv.js"></script>
 </head>
@@ -133,6 +156,8 @@ tr:hover{background:#ffffff05}
   </div>
 </div>
 <div class="alerts" id="alerts"></div>
+<div class="profile-backdrop" id="profileBackdrop" onclick="closeProfile()"></div>
+<div class="profile-overlay" id="profilePanel"></div>
 <div class="main" id="main">
   <div class="loader"><div class="loader-ring"></div><div class="loader-txt">Connecting to Google Sheets...</div></div>
 </div>
@@ -143,7 +168,8 @@ var S = {
   search:'', sortCol:'rank', sortDir:'asc', catF:'ALL', typeF:'ALL',
   ratioTab:'riskOnOff',
   drillSector: null, chartTicker: null,
-  changesOpen: true
+  changesOpen: true,
+  profileTicker: null, bottomOpen: false
 };
 var _tvWidget = null, _tvRetries = 0, _tvFallbackTimer = null, _tvCurrentTicker = null;
 var TV_EXCHANGES = ['AMEX', 'NYSE', 'NASDAQ', 'CBOE', ''];
@@ -268,17 +294,58 @@ function renderDashboard(v){
   html+='<div class="panel"><div class="phdr">STEP 1 — MARKET REGIME <span style="color:#334455;font-weight:400">Should I be aggressive, neutral, or defensive?</span></div><div style="padding:8px">';
   // Verdict + score bar
   html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><div style="width:9px;height:9px;border-radius:50%;background:'+v.color+';box-shadow:0 0 8px '+v.color+'"></div><span style="font-size:15px;font-weight:800;color:'+v.color+';letter-spacing:.8px">'+v.label+'</span></div>';
-  // Score bar (regime.score from cell D12)
   var regScore = d.regime.score || 0;
-  var barW = Math.min(Math.max((regScore*100 + 50), 0), 100); // normalize
+  var barW = Math.min(Math.max((regScore*100 + 50), 0), 100);
   html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="flex:1;height:3px;background:#1a2233;border-radius:2px;overflow:hidden"><div style="width:'+barW+'%;height:100%;background:'+v.color+';border-radius:2px"></div></div><span style="font-size:8px;color:#556677">'+(regScore*100).toFixed(1)+'%</span></div>';
+  // ── FEATURE 3: Regime Implications ──
+  var impls = d.regime.implications || [];
+  var matchImpl = null;
+  impls.forEach(function(im){ if(String(im.label).toUpperCase().indexOf(v.label)!==-1) matchImpl=im; });
+  if(matchImpl && matchImpl.text){
+    html+='<div style="background:'+v.color+'14;border-left:2px solid '+v.color+';padding:6px 10px;margin-bottom:8px;border-radius:0 3px 3px 0;font-size:10px;color:#c8d6e5;line-height:1.5">'+matchImpl.text+'</div>';
+  }
   // Signal table
   html+='<table><thead><tr><th>SIGNAL</th><th>PROXY</th><th class="r">3M</th><th class="c">TREND</th><th class="r">VERDICT</th><th class="r">WT</th></tr></thead><tbody>';
   (d.regime.signals||[]).forEach(function(s){
     html+='<tr><td style="font-weight:600;color:#c8d6e5">'+s.signal+'</td><td class="dim">'+s.proxy+'</td><td class="r" style="color:'+vc(s.m3)+'">'+pct(s.m3)+'</td><td class="c" style="color:'+tc(s.trend)+';font-size:13px">'+s.trend+'</td><td class="r"><span style="color:'+rc(s.verdict)+';font-weight:600;font-size:10px;background:'+rc(s.verdict)+'15;padding:1px 5px;border-radius:3px">'+s.verdict+'</span></td><td class="r dimx">'+wt(s.weight)+'</td></tr>';
   });
-  html+='</tbody></table></div></div>';
-  // ════ SECTOR HEATMAP — always col2, row1 ════
+  html+='</tbody></table>';
+  // ── FEATURE 4: Quadrant Distribution (inside regime panel) ──
+  var qDist={LEADING:0,IMPROVING:0,WEAKENING:0,LAGGING:0};
+  (d.universe||[]).forEach(function(u){
+    var q=String(u.quadrant);
+    if(q.indexOf('LEADING')!==-1)qDist.LEADING++;
+    else if(q.indexOf('IMPROVING')!==-1)qDist.IMPROVING++;
+    else if(q.indexOf('WEAKENING')!==-1)qDist.WEAKENING++;
+    else if(q.indexOf('LAGGING')!==-1)qDist.LAGGING++;
+  });
+  var qTotal=(d.universe||[]).length||1;
+  var qBars=[
+    {label:'LEADING',icon:'▲',count:qDist.LEADING,color:'#00dd88'},
+    {label:'IMPROVING',icon:'◄',count:qDist.IMPROVING,color:'#44aaff'},
+    {label:'WEAKENING',icon:'►',count:qDist.WEAKENING,color:'#FF6D00'},
+    {label:'LAGGING',icon:'▼',count:qDist.LAGGING,color:'#D50000'}
+  ];
+  var healthPct=(qDist.LEADING+qDist.IMPROVING)/qTotal*100;
+  var sickPct=(qDist.WEAKENING+qDist.LAGGING)/qTotal*100;
+  var healthLabel,healthColor;
+  if(healthPct>50){healthLabel='Healthy — broad participation';healthColor='#00dd88';}
+  else if(sickPct>70){healthLabel='Deteriorating — narrow leadership';healthColor='#ff4444';}
+  else{healthLabel='Mixed breadth';healthColor='#ffaa00';}
+  html+='<div style="margin-top:8px;border-top:1px solid #1a2233;padding-top:6px">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><span style="font-size:8px;font-weight:700;color:#556677;letter-spacing:.4px">MARKET BREADTH DISTRIBUTION</span><span style="font-size:8px;color:'+healthColor+'">'+healthLabel+'</span></div>';
+  qBars.forEach(function(qi){
+    var pctVal=qi.count/qTotal*100;
+    html+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">';
+    html+='<span style="font-size:10px;color:'+qi.color+';width:10px;text-align:center">'+qi.icon+'</span>';
+    html+='<span style="font-size:8px;color:#7a8899;width:72px">'+qi.label+'</span>';
+    html+='<div style="flex:1;height:7px;background:#1a2233;border-radius:3px;overflow:hidden"><div style="width:'+pctVal+'%;height:100%;background:'+qi.color+';border-radius:3px;opacity:0.8"></div></div>';
+    html+='<span style="font-size:8px;color:#7a8899;width:52px;text-align:right">'+qi.count+' ('+pctVal.toFixed(0)+'%)</span>';
+    html+='</div>';
+  });
+  html+='</div>';
+  html+='</div></div>'; // close padding div + regime panel
+  // ════ SECTOR HEATMAP ════
   html+='<div class="panel"><div class="phdr">STEP 2 — SECTOR CONVICTION HEATMAP <span style="color:#334455;font-weight:400">click to drill down</span></div><div class="heatgrid" id="heatgrid">';
   (d.sectorMap.sectors||[]).forEach(function(s,idx){
     var isActive = S.drillSector === s.ticker;
@@ -286,7 +353,7 @@ function renderDashboard(v){
     var tierClass = s.rank <= 4 ? 'tier1' : s.rank <= 8 ? 'tier2' : 'tier3';
     html+='<div class="htile '+tierClass+(isActive?' active':'')+'" style="background:'+hc(s.conviction)+'" onclick="toggleDrill(\''+s.ticker+'\')">';
     html+='<span class="rk">#'+s.rank+'</span>';
-    html+='<span class="tk">'+s.ticker+'</span>';
+    html+='<span class="tk" style="cursor:pointer" onclick="event.stopPropagation();openProfile(\''+s.ticker+'\')">'+s.ticker+'</span>';
     html+='<span class="nm">'+s.name+'</span>';
     html+='<span class="cv" style="color:'+vc(s.conviction)+'">'+pct(s.conviction)+'</span>';
     html+='<span class="qd" style="color:'+qc(s.quadrant)+'">'+s.quadrant+'</span>';
@@ -295,15 +362,14 @@ function renderDashboard(v){
     if(drillCount>0) html+='<span class="drill-hint">'+drillCount+' sub-ETFs ▾</span>';
     html+='</div>';
   });
-  html+='</div></div>'; // close heatgrid + heatmap panel
-  // ── ROW 2: Chart (col1) + Drill table (col2) — only when a sector is selected ──
+  html+='</div></div>';
+  // ── Drill-down ──
   if(S.drillSector && d.drillDown && d.drillDown[S.drillSector]){
     var subs = d.drillDown[S.drillSector];
     var secInfo = null;
     (d.sectorMap.sectors||[]).forEach(function(s){ if(s.ticker===S.drillSector) secInfo=s; });
     var secName = secInfo ? secInfo.name : S.drillSector;
     var chartTkr = S.chartTicker || S.drillSector;
-    // LEFT — TradingView chart panel (col1, row2)
     html+='<div class="panel" style="display:flex;flex-direction:column">';
     html+='<div class="phdr" style="display:flex;align-items:center;justify-content:space-between">';
     html+='<span><span style="color:#ff8800;font-weight:700">'+chartTkr+'</span><span style="color:#445566;margin-left:6px;font-size:8px">via TradingView</span></span>';
@@ -311,7 +377,6 @@ function renderDashboard(v){
     html+='</div>';
     html+='<div id="tv_chart" style="flex:1;min-height:360px"></div>';
     html+='</div>';
-    // RIGHT — Sub-ETF drill table (col2, row2)
     html+='<div class="panel drill-panel">';
     html+='<div class="drill-hdr"><div><span class="drill-title">▸ '+S.drillSector+' — '+secName+' SUB-INDUSTRIES</span><span class="drill-count">'+subs.length+' ETFs</span></div><button class="drill-close" onclick="toggleDrill(null)">✕ CLOSE</button></div>';
     html+='<div style="overflow-x:auto"><table><thead><tr><th class="r">#</th><th>TICKER</th><th>NAME</th><th>SUB</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="r">vs SPY</th><th class="r">vs SECTOR</th><th class="c">SPARK</th><th class="r">QUAD</th></tr></thead><tbody>';
@@ -321,7 +386,7 @@ function renderDashboard(v){
       var isActive = u.ticker === chartTkr;
       html+='<tr class="drill-row'+(isActive?' active-chart':'')+'" data-ticker="'+u.ticker+'" onclick="selectChartTicker(\''+u.ticker+'\')" style="'+rowBg+'">';
       html+='<td class="r dimx">'+u.rank+'</td>';
-      html+='<td class="tk">'+u.ticker+'</td>';
+      html+='<td class="tk" style="cursor:pointer" onclick="event.stopPropagation();openProfile(\''+u.ticker+'\')">'+u.ticker+'</td>';
       html+='<td class="dim" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+u.name+'</td>';
       html+='<td class="dim" style="font-size:8px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(u.sub||'')+'</td>';
       html+='<td class="r" style="color:'+vc(u.rs1w)+'">'+pct(u.rs1w)+'</td>';
@@ -335,16 +400,14 @@ function renderDashboard(v){
     });
     html+='</tbody></table></div></div>';
   }
-  // ════ ROTATION — ALL 3 SECTIONS ════
+  // ════ ROTATION ════
   html+='<div class="panel"><div class="phdr">STEP 4 — ROTATION INTELLIGENCE</div>';
-  // Section 1: Risk Regime Pairs
   html+='<div class="sec-hdr" style="color:#ff8800">▸ RISK REGIME PAIRS — Confirming or Diverging?</div>';
   html+='<table><thead><tr><th>PAIR</th><th>WHAT</th><th class="r">1W</th><th class="r">1M</th><th class="c">TREND</th><th class="r">SIGNAL</th></tr></thead><tbody>';
   (d.rotation.pairs||[]).forEach(function(r){
     html+='<tr><td class="tk">'+r.pair+'</td><td class="dim">'+r.desc+'</td><td class="r" style="color:'+vc(r.spread1w)+'">'+pct(r.spread1w)+'</td><td class="r" style="color:'+vc(r.spread1m)+'">'+pct(r.spread1m)+'</td><td class="c" style="color:'+tc(r.trend)+';font-size:13px">'+r.trend+'</td><td class="r"><span style="color:'+sc(r.signal)+';font-weight:600;font-size:9px;background:'+sc(r.signal)+'15;padding:1px 5px;border-radius:3px">'+r.signal+'</span></td></tr>';
   });
   html+='</tbody></table>';
-  // Section 2: Sector vs SPY
   if(d.rotation.sectorSignals && d.rotation.sectorSignals.length){
     html+='<div class="sec-hdr top" style="color:#44aaff">▸ SECTOR vs SPY — Which Sectors Are Turning?</div>';
     html+='<table><thead><tr><th>SECTOR</th><th>NAME</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="c">TREND</th><th class="r">SIGNAL</th></tr></thead><tbody>';
@@ -353,7 +416,6 @@ function renderDashboard(v){
     });
     html+='</tbody></table>';
   }
-  // Section 3: Credit Health
   if(d.rotation.creditHealth && d.rotation.creditHealth.length){
     var cvClr = (d.rotation.creditVerdict && d.rotation.creditVerdict.indexOf('STRESS')!==-1) ? '#ff4444' : '#00dd88';
     html+='<div class="sec-hdr top" style="color:#ff8844">▸ CREDIT HEALTH — Early Warning System';
@@ -365,31 +427,26 @@ function renderDashboard(v){
     });
     html+='</tbody></table>';
   }
-  html+='</div>'; // close rotation panel
-  // ════ EMERGING (ENHANCED) ════
+  html+='</div>';
+  // ════ EMERGING ════
   html+='<div class="panel"><div class="phdr">STEP 5 — EMERGING STRENGTH (1W SURGE) <span style="color:#334455;font-weight:400">Who is getting strong NOW?</span></div><table><thead><tr><th>#</th><th>TICKER</th><th>NAME</th><th class="r">RS 1W</th><th class="r">COMP RS</th><th class="r">RK</th><th class="r">NOTE</th></tr></thead><tbody>';
   (d.emerging||[]).slice(0,12).forEach(function(e){
-    html+='<tr><td class="dimx">'+e.rank+'</td><td class="tk">'+e.ticker+'</td><td class="dim" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+e.name+'</td><td class="r" style="color:#00dd88;font-weight:700">'+pct(e.rs1w)+'</td><td class="r" style="color:'+vc(e.rsComposite)+'">'+pct(e.rsComposite)+'</td><td class="r dimx">'+e.compRank+'</td><td class="r" style="color:'+noteColor(e.note)+';font-size:8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(e.note||'')+'</td></tr>';
+    html+='<tr><td class="dimx">'+e.rank+'</td><td class="tk" style="cursor:pointer" onclick="openProfile(\''+e.ticker+'\')">'+e.ticker+'</td><td class="dim" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+e.name+'</td><td class="r" style="color:#00dd88;font-weight:700">'+pct(e.rs1w)+'</td><td class="r" style="color:'+vc(e.rsComposite)+'">'+pct(e.rsComposite)+'</td><td class="r dimx">'+e.compRank+'</td><td class="r" style="color:'+noteColor(e.note)+';font-size:8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(e.note||'')+'</td></tr>';
   });
   html+='</tbody></table></div>';
-  // ════ TOP 25 CONVICTION (ENHANCED) ════
-  var convRows = (d.conviction && d.conviction.length) ? d.conviction : (d.universe||[]).slice(0,25);
+  // ════ TOP 25 CONVICTION ════
+  var convData = d.conviction || {};
+  var convRows = (convData.top && convData.top.length) ? convData.top : (Array.isArray(d.conviction) && d.conviction.length) ? d.conviction : (d.universe||[]).slice(0,25);
   html+='<div class="panel s2"><div class="phdr">STEP 3 — TOP 25 HIGH CONVICTION PICKS <span style="color:#334455;font-weight:400">What do I actually trade?</span></div><div style="overflow-x:auto"><table><thead><tr><th>#</th><th>TICKER</th><th>NAME</th><th>TYPE</th><th>SECTOR</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="r">COMP</th><th class="r">%ILE</th><th class="r">MOM</th><th class="r">ACCEL</th><th class="r">CONVICTION</th><th class="r">ROTATION</th><th class="c">SPARK</th><th class="r">QUAD</th></tr></thead><tbody>';
   convRows.slice(0,25).forEach(function(u,i){
     var bg=i<5?'background:#00dd8808;border-left:2px solid #00dd8844':'';
-    // Use convictionLabel (text) if available, fall back to numeric
     var cvLabel = u.convictionLabel || '';
     var cvDisplay, cvColor;
-    if(cvLabel){
-      cvDisplay = cvLabel;
-      cvColor = cvlColor(cvLabel);
-    } else {
-      cvDisplay = u.conviction != null ? pct(u.conviction) : '—';
-      cvColor = u.conviction != null ? vc(u.conviction) : '#555';
-    }
+    if(cvLabel){ cvDisplay = cvLabel; cvColor = cvlColor(cvLabel); }
+    else { cvDisplay = u.conviction != null ? pct(u.conviction) : '—'; cvColor = u.conviction != null ? vc(u.conviction) : '#555'; }
     html+='<tr style="'+bg+'">';
     html+='<td class="dimx">'+u.rank+'</td>';
-    html+='<td class="tk">'+u.ticker+'</td>';
+    html+='<td class="tk" style="cursor:pointer" onclick="openProfile(\''+u.ticker+'\')">'+u.ticker+'</td>';
     html+='<td class="dim" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+u.name+'</td>';
     html+='<td><span class="badge" style="'+typeBg(u.type)+'">'+u.type+'</span></td>';
     html+='<td class="dim" style="font-size:9px">'+u.category+'</td>';
@@ -407,9 +464,46 @@ function renderDashboard(v){
     html+='</tr>';
   });
   html+='</tbody></table></div></div>';
+  // ════ FEATURE 2: BOTTOM 10 ════
+  var botRows = (convData.bottom && convData.bottom.length) ? convData.bottom : [];
+  if(botRows.length){
+    html+='<div class="panel s2">';
+    html+='<div class="phdr" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="S.bottomOpen=!S.bottomOpen;render()">';
+    html+='<span style="color:#ff5555">▸ BOTTOM 10 — Weakest (Avoid / Short Candidates)</span>';
+    html+='<span style="color:#556677;font-size:9px">'+(S.bottomOpen?'▾':'▸')+'</span>';
+    html+='</div>';
+    if(S.bottomOpen){
+      html+='<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>TICKER</th><th>NAME</th><th>TYPE</th><th>SECTOR</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="r">COMP</th><th class="r">%ILE</th><th class="r">MOM</th><th class="r">ACCEL</th><th class="r">CONVICTION</th><th class="r">ROTATION</th><th class="c">SPARK</th><th class="r">QUAD</th></tr></thead><tbody>';
+      botRows.forEach(function(u){
+        var bCvLabel = u.convictionLabel || '';
+        var bCvDisplay, bCvColor;
+        if(bCvLabel){ bCvDisplay = bCvLabel; bCvColor = cvlColor(bCvLabel); }
+        else { bCvDisplay = u.composite != null ? pct(u.composite) : '—'; bCvColor = u.composite != null ? vc(u.composite) : '#555'; }
+        html+='<tr class="bot10-row">';
+        html+='<td class="dimx">'+u.rank+'</td>';
+        html+='<td class="tk" style="cursor:pointer" onclick="openProfile(\''+u.ticker+'\')">'+u.ticker+'</td>';
+        html+='<td class="dim" style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+u.name+'</td>';
+        html+='<td><span class="badge" style="'+typeBg(u.type)+'">'+u.type+'</span></td>';
+        html+='<td class="dim" style="font-size:9px">'+u.category+'</td>';
+        html+='<td class="r" style="color:'+vc(u.rs1w)+'">'+pct(u.rs1w)+'</td>';
+        html+='<td class="r" style="color:'+vc(u.rs1m)+'">'+pct(u.rs1m)+'</td>';
+        html+='<td class="r" style="color:'+vc(u.rs3m)+'">'+pct(u.rs3m)+'</td>';
+        html+='<td class="r" style="font-weight:700;color:#ff5555">'+pct(u.composite)+'</td>';
+        html+='<td class="r"><span class="pbar" style="background:linear-gradient(90deg,#ff555533 '+((u.percentile||0)*100)+'%,transparent '+((u.percentile||0)*100)+'%)">'+((u.percentile||0)*100).toFixed(0)+'</span></td>';
+        html+='<td class="r" style="color:'+vc(u.momentum)+'">'+pct(u.momentum)+'</td>';
+        html+='<td class="r" style="color:'+vc(u.accel)+'">'+pct(u.accel)+'</td>';
+        html+='<td class="r"><span class="cvlabel" style="color:'+bCvColor+'">'+bCvDisplay+'</span></td>';
+        html+='<td class="r" style="color:'+sc(u.rotation)+';font-size:9px">'+(u.rotation||'')+'</td>';
+        html+='<td class="c">'+spark(ann(u.rs1w,u.rs1m,u.rs3m,null,null))+'</td>';
+        html+='<td class="r" style="color:'+qc(u.quadrant)+';font-size:9px">'+u.quadrant+'</td>';
+        html+='</tr>';
+      });
+      html+='</tbody></table></div>';
+    }
+    html+='</div>';
+  }
   html+='</div>'; // close g2
   document.getElementById('main').innerHTML=html;
-  // Re-init TV chart if drill panel is open (innerHTML wipes the widget)
   if(S.drillSector){
     setTimeout(function(){ initTVChart(S.chartTicker || S.drillSector); }, 100);
   }
@@ -590,7 +684,7 @@ function renderUniverse(){
   }
   html+='<div class="panel"><div style="overflow-x:auto"><table><thead><tr>'+thc('rank','#','r')+thc('ticker','TICKER')+thc('name','NAME')+thc('type','TYPE')+thc('category','SECTOR')+thc('rs1w','1W','r')+thc('rs1m','1M','r')+thc('rs3m','3M','r')+thc('rs6m','6M','r')+thc('rs12m','12M','r')+thc('composite','COMP','r')+thc('percentile','%ILE','r')+thc('momentum','MOM','r')+'<th class="c">SPARK</th>'+thc('quadrant','QUAD','r')+'</tr></thead><tbody>';
   filtered.slice(0,120).forEach(function(u,i){
-    html+='<tr><td class="r dimx">'+u.rank+'</td><td class="tk">'+u.ticker+'</td><td class="dim" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+u.name+'</td><td><span class="badge" style="'+typeBg(u.type)+'">'+u.type+'</span></td><td class="r dim" style="font-size:9px">'+u.category+'</td><td class="r" style="color:'+vc(u.rs1w)+'">'+pct(u.rs1w)+'</td><td class="r" style="color:'+vc(u.rs1m)+'">'+pct(u.rs1m)+'</td><td class="r" style="color:'+vc(u.rs3m)+'">'+pct(u.rs3m)+'</td><td class="r" style="color:'+vc(u.rs6m)+'">'+pct(u.rs6m)+'</td><td class="r" style="color:'+vc(u.rs12m)+'">'+pct(u.rs12m)+'</td><td class="r" style="font-weight:700;color:'+vc(u.composite)+'">'+pct(u.composite)+'</td><td class="r"><span class="pbar" style="background:linear-gradient(90deg,#00dd8833 '+((u.percentile||0)*100)+'%,transparent '+((u.percentile||0)*100)+'%)">'+((u.percentile||0)*100).toFixed(0)+'</span></td><td class="r" style="color:'+vc(u.momentum)+'">'+pct(u.momentum)+'</td><td class="c">'+spark(ann(u.rs1w,u.rs1m,u.rs3m,u.rs6m,u.rs12m))+'</td><td class="r" style="color:'+qc(u.quadrant)+';font-size:9px">'+u.quadrant+'</td></tr>';
+    html+='<tr><td class="r dimx">'+u.rank+'</td><td class="tk" style="cursor:pointer" onclick="openProfile(\''+u.ticker+'\')">'+u.ticker+'</td><td class="dim" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+u.name+'</td><td><span class="badge" style="'+typeBg(u.type)+'">'+u.type+'</span></td><td class="r dim" style="font-size:9px">'+u.category+'</td><td class="r" style="color:'+vc(u.rs1w)+'">'+pct(u.rs1w)+'</td><td class="r" style="color:'+vc(u.rs1m)+'">'+pct(u.rs1m)+'</td><td class="r" style="color:'+vc(u.rs3m)+'">'+pct(u.rs3m)+'</td><td class="r" style="color:'+vc(u.rs6m)+'">'+pct(u.rs6m)+'</td><td class="r" style="color:'+vc(u.rs12m)+'">'+pct(u.rs12m)+'</td><td class="r" style="font-weight:700;color:'+vc(u.composite)+'">'+pct(u.composite)+'</td><td class="r"><span class="pbar" style="background:linear-gradient(90deg,#00dd8833 '+((u.percentile||0)*100)+'%,transparent '+((u.percentile||0)*100)+'%)">'+((u.percentile||0)*100).toFixed(0)+'</span></td><td class="r" style="color:'+vc(u.momentum)+'">'+pct(u.momentum)+'</td><td class="c">'+spark(ann(u.rs1w,u.rs1m,u.rs3m,u.rs6m,u.rs12m))+'</td><td class="r" style="color:'+qc(u.quadrant)+';font-size:9px">'+u.quadrant+'</td></tr>';
   });
   html+='</tbody></table></div></div>';
   document.getElementById('main').innerHTML=html;
@@ -635,8 +729,149 @@ function renderBreadth(){
   html+='</div>';
   document.getElementById('main').innerHTML=html;
 }
+// ═══════════════════════════════════════════════════════
+// ETF PROFILE PANEL
+// ═══════════════════════════════════════════════════════
+function openProfile(ticker){
+  if(!ticker||!S.data) return;
+  S.profileTicker = ticker;
+  var d = S.data;
+  // Find ETF in universe
+  var etf = null;
+  (d.universe||[]).forEach(function(u){ if(u.ticker===ticker) etf=u; });
+  // Find in conviction
+  var conv = null;
+  var convTop = (d.conviction && d.conviction.top) ? d.conviction.top : (Array.isArray(d.conviction) ? d.conviction : []);
+  convTop.forEach(function(c){ if(c.ticker===ticker) conv=c; });
+  // Also check bottom
+  var convBot = (d.conviction && d.conviction.bottom) ? d.conviction.bottom : [];
+  convBot.forEach(function(c){ if(c.ticker===ticker && !conv) conv=c; });
+  // Determine parent sector
+  var parentTicker = null, parentSec = null;
+  var cat = (etf && etf.category) || (conv && conv.category) || '';
+  (d.sectorMap.sectors||[]).forEach(function(s){
+    if(s.name === cat || s.ticker === ticker) { parentTicker = s.ticker; parentSec = s; }
+  });
+  // Try drill-down lookup if no parent match by name
+  if(!parentTicker){
+    for(var key in (d.drillDown||{})){
+      (d.drillDown[key]||[]).forEach(function(sub){
+        if(sub.ticker===ticker){ parentTicker=key; }
+      });
+      if(parentTicker) break;
+    }
+    if(parentTicker){
+      (d.sectorMap.sectors||[]).forEach(function(s){ if(s.ticker===parentTicker) parentSec=s; });
+    }
+  }
+  // Find this ETF in drill-down for sector context
+  var drillEntry = null;
+  if(parentTicker && d.drillDown && d.drillDown[parentTicker]){
+    (d.drillDown[parentTicker]).forEach(function(sub){ if(sub.ticker===ticker) drillEntry=sub; });
+  }
+  // Peers from same parent sector
+  var peers = [];
+  if(parentTicker && d.drillDown && d.drillDown[parentTicker]){
+    peers = d.drillDown[parentTicker].slice(0,5);
+  }
+  // Merge data sources
+  var rank = (etf && etf.rank) || (conv && conv.rank) || '—';
+  var name = (etf && etf.name) || (conv && conv.name) || (drillEntry && drillEntry.name) || '';
+  var type = (etf && etf.type) || (conv && conv.type) || (drillEntry && drillEntry.type) || '';
+  var percentile = (etf && etf.percentile) || (conv && conv.percentile) || null;
+  var composite = (etf && etf.composite) || (conv && conv.composite) || (drillEntry && drillEntry.rsVsSpy) || null;
+  var quadrant = (etf && etf.quadrant) || (conv && conv.quadrant) || (drillEntry && drillEntry.quadrant) || '';
+  var momentum = (etf && etf.momentum) || (conv && conv.momentum) || (drillEntry && drillEntry.momentum) || null;
+  var rs1w = (etf && etf.rs1w) || (conv && conv.rs1w) || (drillEntry && drillEntry.rs1w) || null;
+  var rs1m = (etf && etf.rs1m) || (conv && conv.rs1m) || (drillEntry && drillEntry.rs1m) || null;
+  var rs3m = (etf && etf.rs3m) || (conv && conv.rs3m) || (drillEntry && drillEntry.rs3m) || null;
+  var rs6m = (etf && etf.rs6m) || null;
+  var rs12m = (etf && etf.rs12m) || null;
+  var accel = (conv && conv.accel) || null;
+  var rotation = (conv && conv.rotation) || '';
+  var cvLabel = (conv && conv.convictionLabel) || '';
+  var rsVsSector = (drillEntry && drillEntry.rsVsSector) || null;
+  var sectorRank = (drillEntry && drillEntry.sectorRank) || null;
+  var totalUni = (d.universe||[]).length || 237;
+  // Build HTML
+  var h = '';
+  // Header
+  h+='<div class="prof-hdr"><div>';
+  h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:800;color:#e8f0ff">'+ticker+'</span>';
+  h+='<span class="badge" style="'+typeBg(type)+'">'+type+'</span></div>';
+  h+='<div style="font-size:9px;color:#7a8899;margin-top:2px">'+name+'</div>';
+  if(cat) h+='<div style="font-size:8px;color:#556677;margin-top:1px">'+cat+'</div>';
+  h+='</div><button class="prof-close" onclick="closeProfile()">✕</button></div>';
+  // Key metrics
+  h+='<div style="display:flex;gap:6px;padding:6px 10px">';
+  h+='<div style="flex:1;text-align:center"><div style="font-size:7px;color:#556677">RANK</div><div style="font-size:13px;font-weight:700;color:#e8f0ff">#'+rank+' <span style="font-size:8px;color:#445566">/ '+totalUni+'</span></div></div>';
+  h+='<div style="flex:1;text-align:center"><div style="font-size:7px;color:#556677">PERCENTILE</div><div style="font-size:13px;font-weight:700;color:#e8f0ff">'+(percentile!=null?((percentile*100).toFixed(0)+'th'):'—')+'</div></div>';
+  h+='<div style="flex:1;text-align:center"><div style="font-size:7px;color:#556677">QUADRANT</div><div style="font-size:11px;font-weight:700;color:'+qc(quadrant)+'">'+quadrant.replace('RRG ','')+'</div></div>';
+  h+='</div>';
+  // RS vs SPY big number
+  h+='<div style="padding:4px 10px;text-align:center"><div style="font-size:7px;color:#556677;margin-bottom:2px">RS vs SPY</div>';
+  h+='<div class="prof-bigrs" style="color:'+vc(composite)+'">'+pct(composite)+'</div>';
+  var barPct = composite!=null ? Math.min(Math.max((composite*100+50),0),100) : 50;
+  h+='<div class="prof-bar"><div class="prof-bar-fill" style="width:'+barPct+'%;background:'+(composite>=0?'#00dd88':'#ff5555')+'"></div></div></div>';
+  // Relative Strength section
+  h+='<div class="prof-sec"><div class="prof-sec-hdr">RELATIVE STRENGTH</div><div class="prof-sec-body">';
+  h+='<div style="display:flex;gap:4px;margin-bottom:4px">';
+  var rsPeriods=[{l:'1W',v:rs1w},{l:'1M',v:rs1m},{l:'3M',v:rs3m},{l:'6M',v:rs6m},{l:'12M',v:rs12m}];
+  rsPeriods.forEach(function(p){
+    h+='<div style="flex:1;text-align:center"><div style="font-size:7px;color:#556677">'+p.l+'</div><div style="font-size:10px;font-weight:600;color:'+vc(p.v)+'">'+pct(p.v)+'</div></div>';
+  });
+  h+='</div>';
+  h+='<div style="text-align:center;padding:4px 0">'+spark(ann(rs1w,rs1m,rs3m,rs6m,rs12m),200,30)+'</div>';
+  h+='</div></div>';
+  // Conviction Assessment
+  h+='<div class="prof-sec"><div class="prof-sec-hdr">CONVICTION ASSESSMENT</div><div class="prof-sec-body">';
+  if(cvLabel){
+    h+='<div style="font-size:11px;font-weight:700;color:'+cvlColor(cvLabel)+';margin-bottom:4px">'+cvLabel+'</div>';
+  }
+  h+='<div class="prof-row"><span class="prof-lbl">Momentum</span><span class="prof-val" style="color:'+vc(momentum)+'">'+pct(momentum)+'</span></div>';
+  h+='<div class="prof-row"><span class="prof-lbl">Acceleration</span><span class="prof-val" style="color:'+vc(accel)+'">'+pct(accel)+'</span></div>';
+  h+='<div class="prof-row"><span class="prof-lbl">Rotation</span><span class="prof-val" style="color:'+sc(rotation)+'">'+rotation+'</span></div>';
+  h+='</div></div>';
+  // Sector Context
+  if(parentSec || rsVsSector!=null){
+    h+='<div class="prof-sec"><div class="prof-sec-hdr">SECTOR CONTEXT</div><div class="prof-sec-body">';
+    if(parentSec){
+      h+='<div class="prof-row"><span class="prof-lbl">Parent</span><span class="prof-val" style="color:#e8f0ff">'+parentSec.ticker+' — '+parentSec.name+' (#'+parentSec.rank+')</span></div>';
+    }
+    h+='<div class="prof-row"><span class="prof-lbl">RS vs Sector</span><span class="prof-val" style="color:'+vc(rsVsSector)+'">'+pct(rsVsSector)+'</span></div>';
+    if(sectorRank!=null){
+      h+='<div class="prof-row"><span class="prof-lbl">Sector Rank</span><span class="prof-val" style="color:#e8f0ff">#'+sectorRank+'</span></div>';
+    }
+    h+='</div></div>';
+  }
+  // Peers
+  if(peers.length>0){
+    h+='<div class="prof-sec"><div class="prof-sec-hdr">PEERS ('+((parentSec && parentSec.name)||parentTicker||'sector')+')</div><div class="prof-sec-body">';
+    peers.forEach(function(p){
+      var isMe = p.ticker===ticker;
+      h+='<div class="prof-peer" style="'+(isMe?'background:#ffffff08;border-radius:3px;padding:3px 4px':'')+'">';
+      h+='<span style="color:#556677;font-size:9px;width:20px">#'+p.rank+'</span>';
+      h+='<span style="font-weight:700;color:'+(isMe?'#ff8800':'#e8f0ff')+';width:48px;cursor:pointer" onclick="openProfile(\''+p.ticker+'\')">'+p.ticker+'</span>';
+      h+='<span style="color:'+vc(p.rs3m||p.rsVsSpy)+';flex:1">'+pct(p.rs3m||p.rsVsSpy)+'</span>';
+      h+='<span style="color:'+qc(p.quadrant)+';font-size:8px">'+p.quadrant.replace('RRG ','')+'</span>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+  }
+  // TradingView button
+  h+='<button class="prof-btn" onclick="closeProfile();S.drillSector=\''+( parentTicker||ticker)+'\';S.chartTicker=\''+ticker+'\';render()">📊 Open TradingView Chart</button>';
+  document.getElementById('profilePanel').innerHTML = h;
+  document.getElementById('profilePanel').classList.add('open');
+  document.getElementById('profileBackdrop').classList.add('open');
+}
+function closeProfile(){
+  S.profileTicker = null;
+  document.getElementById('profilePanel').classList.remove('open');
+  document.getElementById('profileBackdrop').classList.remove('open');
+}
 // ═══ KEYBOARD ═══
 document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){ closeProfile(); }
   if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();S.tab='UNIVERSE';render();setTimeout(function(){var el=document.getElementById('usearch');if(el)el.focus();},50);}
   if(e.key==='r'&&(e.metaKey||e.ctrlKey)){e.preventDefault();loadData();}
 });
