@@ -795,77 +795,189 @@ function pairDivergence(s3, s12) {
   if (s3<0) return {label:'▼ lagging',color:'#ff5555'};
   return {label:'— flat',color:'#888'};
 }
-function renderGlobal() {
-  var d = S.data;
-  var rows = d.globalFlows || [];
-  // Build region aggregates
-  var regionMap = {};
-  rows.forEach(function(r) {
-    var cat = r.category || 'Other';
-    if (!regionMap[cat]) regionMap[cat] = {region:cat, etfs:[], totalRS:0, count:0, bestETF:null, bestRS:-Infinity};
-    regionMap[cat].etfs.push(r);
-    if (r.composite!=null) { regionMap[cat].totalRS+=r.composite; regionMap[cat].count++; }
-    if (r.composite!=null&&r.composite>regionMap[cat].bestRS) { regionMap[cat].bestRS=r.composite; regionMap[cat].bestETF=r.ticker; }
-  });
-  var regions = Object.keys(regionMap).sort();
-  var html = '';
-  // Section 1: Region heatmap
-  html+='<div class="panel" style="margin-bottom:10px"><div class="phdr">GLOBAL FLOWS — INTERNATIONAL CAPITAL FLOWS <span style="color:#334455;font-weight:400">'+rows.length+' ETFs · click region to filter</span></div>';
-  html+='<div class="region-grid">';
+// ── Static macro data (approximate, major economies) ──
+var MACRO_DATA = {
+  'North America':   {gdp:'+2.8%',unemp:'4.1%', rates:'4.25–4.50%',cpi:'2.9%',pmi:'52.5',currency:'USD',notes:'Fed on hold · AI capex boom · resilient labor'},
+  'Europe':          {gdp:'+0.7%',unemp:'6.0%', rates:'2.90%',     cpi:'2.3%',pmi:'48.9',currency:'EUR',notes:'ECB cutting · German drag · energy transition'},
+  'China':           {gdp:'+5.0%',unemp:'5.1%', rates:'3.10%',     cpi:'0.5%',pmi:'50.1',currency:'CNY',notes:'Deflation risk · stimulus mode · property stress'},
+  'Japan':           {gdp:'+0.1%',unemp:'2.4%', rates:'0.50%',     cpi:'3.6%',pmi:'49.6',currency:'JPY',notes:'BOJ hiking · weak yen tailwind for exporters'},
+  'India':           {gdp:'+6.4%',unemp:'8.0%', rates:'6.25%',     cpi:'4.3%',pmi:'57.5',currency:'INR',notes:'Fastest growing G20 · demographic dividend'},
+  'South Korea':     {gdp:'+2.0%',unemp:'2.8%', rates:'2.75%',     cpi:'2.2%',pmi:'51.0',currency:'KRW',notes:'Semiconductor cycle · Samsung · SK Hynix'},
+  'Latin America':   {gdp:'+2.1%',unemp:'7.2%', rates:'10.5%',     cpi:'5.8%',pmi:'51.2',currency:'Mixed',notes:'High carry · commodity exposure · political risk'},
+  'Brazil':          {gdp:'+3.1%',unemp:'6.2%', rates:'13.75%',    cpi:'4.8%',pmi:'53.1',currency:'BRL',notes:'Commodity-rich · high carry · fiscal concerns'},
+  'Mexico':          {gdp:'+1.5%',unemp:'2.8%', rates:'9.00%',     cpi:'3.7%',pmi:'49.8',currency:'MXN',notes:'Nearshoring hub · US supply chain beneficiary'},
+  'Middle East':     {gdp:'+4.5%',unemp:'3.8%', rates:'5.15%',     cpi:'2.1%',pmi:'55.2',currency:'Mixed',notes:'Oil-driven · Vision 2030 · diversification push'},
+  'Saudi Arabia':    {gdp:'+6.0%',unemp:'3.5%', rates:'5.50%',     cpi:'1.7%',pmi:'55.8',currency:'SAR',notes:'ARAMCO · Vision 2030 · NEOM megaprojects'},
+  'Israel':          {gdp:'+1.5%',unemp:'3.8%', rates:'4.50%',     cpi:'3.3%',pmi:'48.3',currency:'ILS',notes:'Tech hub · Unit 8200 · geopolitical overhang'},
+  'Africa':          {gdp:'+3.8%',unemp:'7.4%', rates:'8.2%',      cpi:'5.6%',pmi:'50.5',currency:'Mixed',notes:'High growth · infrastructure gap · commodity rich'},
+  'Vietnam':         {gdp:'+6.4%',unemp:'2.1%', rates:'4.50%',     cpi:'3.6%',pmi:'54.0',currency:'VND',notes:'China+1 manufacturing · electronics exports surge'},
+  'Indonesia':       {gdp:'+5.0%',unemp:'5.2%', rates:'5.75%',     cpi:'2.5%',pmi:'51.7',currency:'IDR',notes:'Nickel / EV metals · growing middle class'},
+  'Asia-Pacific':    {gdp:'+3.5%',unemp:'3.9%', rates:'4.2%',      cpi:'2.8%',pmi:'51.5',currency:'Mixed',notes:'ASEAN resilient · China overhang · RCEP trade'},
+  'Emerging Markets':{gdp:'+4.1%',unemp:'5.8%', rates:'6.8%',      cpi:'4.2%',pmi:'52.0',currency:'Mixed',notes:'Dollar sensitivity · commodity correlation'},
+  'Frontier':        {gdp:'+4.5%',unemp:'8.1%', rates:'9.5%',      cpi:'8.5%',pmi:'—',  currency:'Mixed',notes:'High beta · low DM correlation · illiquid'},
+  'Global':          {gdp:'+3.2%',unemp:'5.1%', rates:'4.1%',      cpi:'3.4%',pmi:'52.1',currency:'Mixed',notes:'IMF WEO estimate · AI productivity tailwind'}
+};
+// Approximate Mercator-like positions on 1000×440 SVG canvas
+var _RPOS = {
+  'North America':{cx:148,cy:172,r:28},'Mexico':{cx:163,cy:240,r:17},
+  'Brazil':{cx:240,cy:348,r:19},'Latin America':{cx:212,cy:308,r:21},
+  'Europe':{cx:466,cy:152,r:30},'Africa':{cx:474,cy:318,r:24},
+  'Middle East':{cx:552,cy:228,r:20},'Saudi Arabia':{cx:568,cy:256,r:17},
+  'Israel':{cx:528,cy:215,r:13},'India':{cx:641,cy:256,r:22},
+  'China':{cx:714,cy:188,r:26},'South Korea':{cx:792,cy:196,r:16},
+  'Japan':{cx:820,cy:177,r:17},'Vietnam':{cx:758,cy:283,r:15},
+  'Indonesia':{cx:775,cy:348,r:17},'Asia-Pacific':{cx:830,cy:348,r:20},
+  'Emerging Markets':{cx:606,cy:332,r:18},'Frontier':{cx:422,cy:382,r:15},
+  'Global':{cx:500,cy:412,r:14}
+};
+function gSelectRegion(reg) { S.globalRegion = S.globalRegion===reg ? 'ALL' : reg; renderGlobal(); }
+function _buildGlobalMap(regionMap, regions) {
+  var W=1000,H=440;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block;cursor:default" xmlns="http://www.w3.org/2000/svg">';
+  s+='<rect width="'+W+'" height="'+H+'" fill="#060a10"/>';
+  // Continent fills (simplified decorative outlines)
+  var land=[
+    'M68,78 L262,78 L280,220 L230,328 L188,358 L128,298 L72,212 Z',  // N.America
+    'M174,308 L280,308 L298,428 L248,436 L190,398 L170,366 Z',        // S.America
+    'M386,78 L574,78 L584,202 L530,226 L456,216 L396,186 L384,140 Z', // Europe
+    'M410,206 L550,206 L564,386 L508,416 L442,396 L406,346 L410,264 Z',// Africa
+    'M568,58 L888,58 L900,148 L638,148 L578,128 Z',                    // Russia
+    'M568,148 L888,148 L892,370 L826,378 L746,366 L656,316 L596,286 L566,202 Z',// Asia
+    'M776,368 L880,368 L886,422 L822,430 L786,410 Z'                   // Oceania
+  ];
+  land.forEach(function(d){s+='<path d="'+d+'" fill="#0d1620" stroke="#1a2635" stroke-width="0.8"/>';});
+  // Grid lines
+  for(var x=0;x<=W;x+=125) s+='<line x1="'+x+'" y1="0" x2="'+x+'" y2="'+H+'" stroke="#ffffff04" stroke-width="0.5"/>';
+  for(var y=0;y<=H;y+=110) s+='<line x1="0" y1="'+y+'" x2="'+W+'" y2="'+y+'" stroke="#ffffff04" stroke-width="0.5"/>';
+  s+='<line x1="0" y1="262" x2="'+W+'" y2="262" stroke="#ffffff0a" stroke-width="0.8" stroke-dasharray="3,5"/>';
+  s+='<text x="4" y="260" font-family="JetBrains Mono,monospace" font-size="6" fill="#1a2a3a">EQUATOR</text>';
+  // Region bubbles
   regions.forEach(function(reg) {
-    var rm = regionMap[reg];
-    var avgRS = rm.count>0 ? rm.totalRS/rm.count : 0;
-    var isActive = S.globalRegion===reg;
-    html+='<div class="rtile'+(isActive?' active':'')+'" style="background:'+hc(avgRS)+'" onclick="S.globalRegion=S.globalRegion===\''+reg+'\'?\'ALL\':\''+reg+'\';renderGlobal()">';
-    html+='<div class="rt-region">'+reg+'</div>';
-    html+='<div class="rt-rs" style="color:'+vc(avgRS)+'">'+pct(avgRS)+'</div>';
-    html+='<div class="rt-meta">'+rm.etfs.length+' ETFs · '+( rm.bestETF||'—')+'</div>';
-    html+='</div>';
+    var pos=_RPOS[reg]; if(!pos) return;
+    var rm=regionMap[reg];
+    var avgRS=rm.count>0?rm.totalRS/rm.count:0;
+    var isActive=S.globalRegion===reg;
+    var clr=avgRS>0?'0,221,136':'255,85,85';
+    var op=Math.min(Math.abs(avgRS*100)/18,0.75)+0.18;
+    var fill='rgba('+clr+','+op.toFixed(2)+')';
+    var txtClr=avgRS>0?'#00dd88':'#ff5555';
+    if(isActive){ s+='<circle cx="'+pos.cx+'" cy="'+pos.cy+'" r="'+(pos.r+9)+'" fill="#ff880012" stroke="#ff880050" stroke-width="1.5"/>'; }
+    if(avgRS>0.08){ s+='<circle cx="'+pos.cx+'" cy="'+pos.cy+'" r="'+(pos.r+4)+'" fill="none" stroke="'+txtClr+'28" stroke-width="1"/>'; }
+    s+='<circle cx="'+pos.cx+'" cy="'+pos.cy+'" r="'+pos.r+'" fill="'+fill+'" stroke="'+(isActive?'#ff8800':'rgba('+clr+',0.35)')+'" stroke-width="'+(isActive?2:0.8)+'" style="cursor:pointer" onclick="gSelectRegion(\''+reg+'\')" />';
+    if(pos.r>=15){ s+='<text x="'+pos.cx+'" y="'+(pos.cy+1)+'" text-anchor="middle" dominant-baseline="middle" font-family="JetBrains Mono,monospace" font-size="'+(pos.r>=22?9:8)+'" font-weight="700" fill="'+txtClr+'" style="pointer-events:none">'+pct(avgRS,0)+'</text>'; }
+    var ly=pos.cy+pos.r+10; if(ly>H-6) ly=pos.cy-pos.r-5;
+    s+='<text x="'+pos.cx+'" y="'+ly+'" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="'+(isActive?'#ff8800':'#7a9ab0')+'" font-weight="'+(isActive?700:400)+'" style="pointer-events:none">'+reg+'</text>';
   });
-  html+='</div></div>';
+  s+='<text x="'+(W-6)+'" y="16" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="7" fill="#1e2e3e">bubble color = avg RS vs SPY · click to drill down</text>';
+  s+='</svg>';
+  return s;
+}
+function _buildMacroPanel(region, rm) {
+  var macro=MACRO_DATA[region]||{};
+  var avgRS=rm.count>0?rm.totalRS/rm.count:0;
+  var topETFs=(rm.etfs||[]).slice().sort(function(a,b){return(b.composite||0)-(a.composite||0);}).slice(0,6);
+  var h='<div class="panel" style="height:fit-content">';
+  h+='<div class="phdr" style="color:'+vc(avgRS)+'">'+region.toUpperCase()+' <span style="color:#334455;font-weight:400">'+rm.etfs.length+' ETFs</span></div>';
+  h+='<div style="padding:8px 10px 6px;border-bottom:1px solid #1a2233;text-align:center">';
+  h+='<div style="font-size:7px;color:#556677;letter-spacing:.3px">AVG RS vs SPY</div>';
+  h+='<div style="font-size:22px;font-weight:800;color:'+vc(avgRS)+';line-height:1.1">'+pct(avgRS)+'</div>';
+  h+='</div>';
+  h+='<div style="padding:5px 10px">';
+  [['GDP Growth',macro.gdp],['Unemployment',macro.unemp],['Interest Rates',macro.rates],['Inflation (CPI)',macro.cpi],['Manuf. PMI',macro.pmi],['Currency',macro.currency]].forEach(function(row){
+    if(!row[1]) return;
+    h+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #0f1724;font-size:10px">';
+    h+='<span style="color:#556677">'+row[0]+'</span>';
+    h+='<span style="font-weight:600;color:#c8d6e5">'+row[1]+'</span></div>';
+  });
+  h+='</div>';
+  if(macro.notes){h+='<div style="padding:5px 10px 6px;font-size:8px;color:#556677;border-top:1px solid #1a2233;line-height:1.55">'+macro.notes+'</div>';}
+  h+='<div class="sec-hdr top" style="color:#44aaff">TOP ETFs IN REGION</div>';
+  topETFs.forEach(function(etf){
+    h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid #0f1724">';
+    h+='<span style="font-weight:700;color:#e8f0ff;cursor:pointer;width:46px;font-size:11px" onclick="openProfile(\''+etf.ticker+'\')">'+etf.ticker+'</span>';
+    h+='<span style="color:'+vc(etf.composite)+';font-weight:600;font-size:10px;flex:1">'+pct(etf.composite)+'</span>';
+    h+='<span style="color:'+qc(etf.quadrant)+';font-size:8px">'+etf.quadrant.replace(/[▲◄►▼]\s*/,'')+'</span>';
+    h+='</div>';
+  });
+  h+='<button class="prof-btn" onclick="gSelectRegion(\''+region+'\')">✕ Clear Region Filter</button>';
+  h+='</div>';
+  return h;
+}
+function _buildGlobalTable(filtered) {
+  function gthc(col,lbl,cls){var arr=S.globalSort===col?(S.globalSortDir==='asc'?' ↑':' ↓'):'';var act=S.globalSort===col?' on':'';return'<th class="'+(cls||'')+act+'" onclick="gSort(\''+col+'\')">'+lbl+arr+'</th>';}
+  var h='<div class="panel"><div style="overflow-x:auto"><table><thead><tr>';
+  h+=gthc('rank','#','r')+gthc('ticker','TICKER')+gthc('name','NAME')+gthc('category','REGION')+gthc('sub','SUB');
+  h+=gthc('rs1w','1W','r')+gthc('rs1m','1M','r')+gthc('rs3m','3M','r')+gthc('composite','RS vs SPY','r');
+  h+=gthc('momentum','MOM','r')+gthc('rotation','ROTATION','r')+'<th class="c">SPARK</th>'+gthc('quadrant','QUAD','r');
+  h+='</tr></thead><tbody>';
+  filtered.forEach(function(r){
+    h+='<tr>';
+    h+='<td class="r dimx">'+r.rank+'</td>';
+    h+='<td class="tk" style="cursor:pointer" onclick="openProfile(\''+r.ticker+'\')">'+r.ticker+'</td>';
+    h+='<td class="dim" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.name+'</td>';
+    h+='<td class="dim" style="font-size:9px">'+r.category+'</td>';
+    h+='<td class="dimx" style="font-size:8px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(r.sub||'')+'</td>';
+    h+='<td class="r" style="color:'+vc(r.rs1w)+'">'+pct(r.rs1w)+'</td>';
+    h+='<td class="r" style="color:'+vc(r.rs1m)+'">'+pct(r.rs1m)+'</td>';
+    h+='<td class="r" style="color:'+vc(r.rs3m)+'">'+pct(r.rs3m)+'</td>';
+    h+='<td class="r" style="font-weight:700;color:'+vc(r.composite)+'">'+pct(r.composite)+'</td>';
+    h+='<td class="r" style="color:'+vc(r.momentum)+'">'+pct(r.momentum)+'</td>';
+    h+='<td class="r" style="color:'+qc(r.rotation)+';font-size:9px">'+r.rotation+'</td>';
+    h+='<td class="c">'+spark(ann(r.rs1w,r.rs1m,r.rs3m,r.rs6m,r.rs12m))+'</td>';
+    h+='<td class="r" style="color:'+qc(r.quadrant)+';font-size:9px">'+r.quadrant+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div></div>';
+  return h;
+}
+function renderGlobal() {
+  var d=S.data, rows=d.globalFlows||[];
+  // Build region aggregates
+  var regionMap={};
+  rows.forEach(function(r){
+    var cat=r.category||'Other';
+    if(!regionMap[cat]) regionMap[cat]={region:cat,etfs:[],totalRS:0,count:0,bestETF:null,bestRS:-Infinity};
+    regionMap[cat].etfs.push(r);
+    if(r.composite!=null){regionMap[cat].totalRS+=r.composite;regionMap[cat].count++;}
+    if(r.composite!=null&&r.composite>regionMap[cat].bestRS){regionMap[cat].bestRS=r.composite;regionMap[cat].bestETF=r.ticker;}
+  });
+  var regions=Object.keys(regionMap).sort();
   // Filter + sort
-  var filtered = rows.filter(function(r) {
-    if (S.globalRegion!=='ALL'&&r.category!==S.globalRegion) return false;
-    if (S.globalSearch) { var s=S.globalSearch.toLowerCase(); if(r.ticker.toLowerCase().indexOf(s)===-1&&r.name.toLowerCase().indexOf(s)===-1&&(r.category||'').toLowerCase().indexOf(s)===-1) return false; }
+  var filtered=rows.filter(function(r){
+    if(S.globalRegion!=='ALL'&&r.category!==S.globalRegion) return false;
+    if(S.globalSearch){var s=S.globalSearch.toLowerCase();if(r.ticker.toLowerCase().indexOf(s)===-1&&r.name.toLowerCase().indexOf(s)===-1&&(r.category||'').toLowerCase().indexOf(s)===-1) return false;}
     return true;
   });
-  filtered.sort(function(a,b) {
+  filtered.sort(function(a,b){
     var va=a[S.globalSort],vb=b[S.globalSort];
     if(va==null)return 1;if(vb==null)return -1;
     if(typeof va==='string')return S.globalSortDir==='asc'?va.localeCompare(vb):vb.localeCompare(va);
     return S.globalSortDir==='asc'?va-vb:vb-va;
   });
+  var html='';
+  // Map panel
+  html+='<div class="panel" style="margin-bottom:10px">';
+  html+='<div class="phdr">GLOBAL FLOWS — WORLD MAP <span style="color:#334455;font-weight:400">'+rows.length+' ETFs · '+regions.length+' regions · click a bubble to explore</span></div>';
+  html+=_buildGlobalMap(regionMap,regions);
+  html+='</div>';
+  // Controls bar
   var regionOpts=['ALL'].concat(regions);
   html+='<div style="display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap;align-items:center">';
   html+='<input class="search" id="gsearch" value="'+S.globalSearch+'" placeholder="Search ETFs by ticker, name, region..." oninput="S.globalSearch=this.value;renderGlobal()">';
   html+='<select class="filt" onchange="S.globalRegion=this.value;renderGlobal()">';
   regionOpts.forEach(function(r){html+='<option value="'+r+'"'+(S.globalRegion===r?' selected':'')+'>'+r+'</option>';});
   html+='</select>';
-  html+='<span style="color:#445566;font-size:9px;margin-left:6px">'+filtered.length+' results</span></div>';
-  function gthc(col,lbl,cls){var arr=S.globalSort===col?(S.globalSortDir==='asc'?' ↑':' ↓'):'';var act=S.globalSort===col?' on':'';return'<th class="'+(cls||'')+act+'" onclick="gSort(\''+col+'\')">'+lbl+arr+'</th>';}
-  html+='<div class="panel"><div style="overflow-x:auto"><table><thead><tr>';
-  html+=gthc('rank','#','r')+gthc('ticker','TICKER')+gthc('name','NAME')+gthc('category','REGION')+gthc('sub','SUB');
-  html+=gthc('rs1w','1W','r')+gthc('rs1m','1M','r')+gthc('rs3m','3M','r')+gthc('composite','RS vs SPY','r');
-  html+=gthc('momentum','MOM','r')+gthc('rotation','ROTATION','r')+'<th class="c">SPARK</th>'+gthc('quadrant','QUAD','r');
-  html+='</tr></thead><tbody>';
-  filtered.forEach(function(r) {
-    html+='<tr>';
-    html+='<td class="r dimx">'+r.rank+'</td>';
-    html+='<td class="tk" style="cursor:pointer" onclick="openProfile(\''+r.ticker+'\')">'+r.ticker+'</td>';
-    html+='<td class="dim" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.name+'</td>';
-    html+='<td class="dim" style="font-size:9px">'+r.category+'</td>';
-    html+='<td class="dimx" style="font-size:8px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(r.sub||'')+'</td>';
-    html+='<td class="r" style="color:'+vc(r.rs1w)+'">'+pct(r.rs1w)+'</td>';
-    html+='<td class="r" style="color:'+vc(r.rs1m)+'">'+pct(r.rs1m)+'</td>';
-    html+='<td class="r" style="color:'+vc(r.rs3m)+'">'+pct(r.rs3m)+'</td>';
-    html+='<td class="r" style="font-weight:700;color:'+vc(r.composite)+'">'+pct(r.composite)+'</td>';
-    html+='<td class="r" style="color:'+vc(r.momentum)+'">'+pct(r.momentum)+'</td>';
-    html+='<td class="r" style="color:'+qc(r.rotation)+';font-size:9px">'+r.rotation+'</td>';
-    html+='<td class="c">'+spark(ann(r.rs1w,r.rs1m,r.rs3m,r.rs6m,r.rs12m))+'</td>';
-    html+='<td class="r" style="color:'+qc(r.quadrant)+';font-size:9px">'+r.quadrant+'</td>';
-    html+='</tr>';
-  });
-  html+='</tbody></table></div></div>';
+  if(S.globalRegion!=='ALL') html+='<button style="background:#1a2233;border:1px solid #ff880044;border-radius:3px;padding:3px 8px;font-size:9px;color:#ff8800;cursor:pointer" onclick="gSelectRegion(S.globalRegion)">✕ '+S.globalRegion+'</button>';
+  html+='<span style="color:#445566;font-size:9px;margin-left:4px">'+filtered.length+' results</span></div>';
+  // Detail layout — 2-col when region selected
+  if(S.globalRegion!=='ALL'&&regionMap[S.globalRegion]){
+    html+='<div style="display:grid;grid-template-columns:260px 1fr;gap:10px;align-items:start">';
+    html+=_buildMacroPanel(S.globalRegion,regionMap[S.globalRegion]);
+    html+='<div>'+_buildGlobalTable(filtered)+'</div>';
+    html+='</div>';
+  } else {
+    html+=_buildGlobalTable(filtered);
+  }
   document.getElementById('main').innerHTML=html;
 }
 function gSort(col){if(S.globalSort===col)S.globalSortDir=S.globalSortDir==='asc'?'desc':'asc';else{S.globalSort=col;S.globalSortDir=col==='rank'?'asc':'desc';}renderGlobal();}
