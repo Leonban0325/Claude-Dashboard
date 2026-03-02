@@ -257,7 +257,9 @@ var EXCHANGE_MAP = {
   BBH:'AMEX',URA:'AMEX',SIL:'AMEX',RING:'AMEX',
   ESGU:'AMEX',ESGV:'AMEX',SUSA:'AMEX',
   VEGI:'AMEX',KROP:'AMEX',AIRR:'AMEX',MXI:'AMEX',EXI:'AMEX',
-  IEZ:'AMEX',XES:'AMEX',BLOK:'AMEX',WCLD:'AMEX'
+  IEZ:'AMEX',XES:'AMEX',BLOK:'AMEX',WCLD:'AMEX',
+  // ── Broad / Benchmark ──
+  QQQ:'NASDAQ', SPY:'AMEX'
 };
 function tvSymbol(ticker) { var ex = EXCHANGE_MAP[ticker] || 'AMEX'; return ex + ':' + ticker; }
 var TABS = ['DASHBOARD','UNIVERSE','RATIOS','BREADTH','GLOBAL','THEMATIC'];
@@ -521,7 +523,7 @@ function renderDashboard(v){
     ];
     var hasPairs = paSecs.some(function(s){return (d.pairAnalysis[s.key]||[]).length>0;});
     if (hasPairs) {
-      html+='<div class="panel">';
+      html+='<div class="panel s2">';
       html+='<div class="phdr">PAIR ANALYSIS — Institutional Spreads</div>';
       paSecs.forEach(function(sec) {
         var pairs = d.pairAnalysis[sec.key] || [];
@@ -1173,6 +1175,14 @@ function openProfile(ticker){
   // Find ETF in universe
   var etf = null;
   (d.universe||[]).forEach(function(u){ if(u.ticker===ticker) etf=u; });
+  // Fallback: check Global Flows
+  if (!etf) {
+    (d.globalFlows||[]).forEach(function(g){ if(g.ticker===ticker) etf=g; });
+  }
+  // Fallback: check Thematic Radar
+  if (!etf) {
+    (d.thematic||[]).forEach(function(t){ if(t.ticker===ticker) etf=t; });
+  }
   // Find in conviction
   var conv = null;
   var convTop = (d.conviction && d.conviction.top) ? d.conviction.top : (Array.isArray(d.conviction) ? d.conviction : []);
