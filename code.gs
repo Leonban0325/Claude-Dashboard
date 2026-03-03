@@ -676,3 +676,38 @@ function parsePairAnalysis(ss) {
   }
   return sections;
 }
+// ═══════════════════════════════════════════════════════
+// CLAUDE AI PROXY
+// ═══════════════════════════════════════════════════════
+// SETUP (run once in Apps Script editor):
+//   PropertiesService.getScriptProperties().setProperty('ANTHROPIC_API_KEY', 'sk-ant-...');
+function callClaude(prompt, systemPrompt) {
+  var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+  if (!key) return 'API key not configured. Set ANTHROPIC_API_KEY in Script Properties.';
+  try {
+    var payload = {
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 1200,
+      messages: [{ role: 'user', content: prompt }]
+    };
+    if (systemPrompt) payload.system = systemPrompt;
+    var response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01'
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    var code = response.getResponseCode();
+    if (code !== 200) {
+      return 'API error (' + code + '): ' + response.getContentText().substring(0, 200);
+    }
+    var data = JSON.parse(response.getContentText());
+    return data.content[0].text;
+  } catch(e) {
+    return 'Error calling Claude: ' + e.toString();
+  }
+}

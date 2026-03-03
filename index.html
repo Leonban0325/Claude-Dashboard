@@ -193,6 +193,10 @@ tr:hover{background:#ffffff05}
 .toast.show{opacity:1;transform:translateY(0)}
 .toast.success{border-color:#00dd8844;color:#00dd88}
 .toast.warning{border-color:#ff884444;color:#ff8844}
+/* ── AI Pulse ── */
+.ai-loading::after{content:'.';animation:aiDots 1.5s infinite}
+@keyframes aiDots{0%{content:'.';}33%{content:'..';}66%{content:'...';}100%{content:'';}}
+#aiChatInput:focus{border-color:#ff880044;outline:none}
 </style>
 <script src="https://s3.tradingview.com/tv.js"></script>
 </head>
@@ -226,7 +230,8 @@ var S = {
   globalRegion:'ALL', globalSearch:'', globalSort:'rank', globalSortDir:'asc',
   themeFilter:'ALL', themeSearch:'', themeSort:'rank', themeSortDir:'asc',
   layout: null, layoutName: 'ANALYST', layoutLocked: true,
-  gridInitialized: false, collapsedWidgets: {}
+  gridInitialized: false, collapsedWidgets: {},
+  aiPulse: '', aiPulseTime: '', aiPulseLoading: false, aiChat: []
 };
 var _tvWidget = null, _tvRetries = 0;
 var EXCHANGE_MAP = {
@@ -304,11 +309,12 @@ var EXCHANGE_MAP = {
 function tvSymbol(ticker) { var ex = EXCHANGE_MAP[ticker] || 'AMEX'; return ex + ':' + ticker; }
 var TABS = ['DASHBOARD','UNIVERSE','RATIOS','BREADTH','GLOBAL','THEMATIC'];
 
-// ═══ SPRINT 3: WIDGET GRID ENGINE ═══
+/// ═══ SPRINT 3: WIDGET GRID ENGINE ═══
 
 // 3a. WIDGETS registry
 var WIDGETS = [
-  {id:'changes',     label:'WHAT CHANGED',         icon:'⚡',defaultW:12,defaultH:3,minW:6,minH:2,render:function(el){renderChangesWidget(el);}},
+  {id:'aiPulse',     label:'MARKET PULSE',          icon:'◉', defaultW:12,defaultH:4,minW:6,minH:3,render:function(el){renderAIPulseWidget(el);}},
+  {id:'changes',     label:'WHAT CHANGED',          icon:'⚡',defaultW:12,defaultH:3,minW:6,minH:2,render:function(el){renderChangesWidget(el);}},
   {id:'regime',      label:'MARKET REGIME',         icon:'◎', defaultW:6, defaultH:8,minW:4,minH:5,render:function(el){renderRegimeWidget(el);}},
   {id:'heatmap',     label:'SECTOR HEATMAP',        icon:'▦', defaultW:6, defaultH:7,minW:4,minH:4,render:function(el){renderHeatmapWidget(el);}},
   {id:'drillDown',   label:'DRILL-DOWN TABLE',      icon:'▸', defaultW:7, defaultH:8,minW:5,minH:4,render:function(el){renderDrillDownWidget(el);}},
@@ -324,30 +330,33 @@ function getWidgetDef(id){for(var i=0;i<WIDGETS.length;i++){if(WIDGETS[i].id===i
 // 3b. LAYOUT_PRESETS
 var LAYOUT_PRESETS = {
   ANALYST:[
-    {id:'changes',    x:0,y:0, w:12,h:3},
-    {id:'regime',     x:0,y:3, w:6,h:8},{id:'heatmap',     x:6,y:3, w:6,h:8},
-    {id:'drillDown',  x:0,y:11,w:7,h:8},{id:'tvChart',     x:7,y:11,w:5,h:8},
-    {id:'rotation',   x:0,y:19,w:6,h:9},{id:'pairAnalysis',x:6,y:19,w:6,h:9},
-    {id:'emerging',   x:0,y:28,w:6,h:5},
-    {id:'conviction', x:0,y:33,w:12,h:9},
-    {id:'bottom10',   x:0,y:42,w:12,h:6}
+    {id:'aiPulse',    x:0,y:0, w:12,h:4},
+    {id:'changes',    x:0,y:4, w:12,h:3},
+    {id:'regime',     x:0,y:7, w:6,h:8},{id:'heatmap',     x:6,y:7, w:6,h:8},
+    {id:'drillDown',  x:0,y:15,w:7,h:8},{id:'tvChart',     x:7,y:15,w:5,h:8},
+    {id:'rotation',   x:0,y:23,w:6,h:9},{id:'pairAnalysis',x:6,y:23,w:6,h:9},
+    {id:'emerging',   x:0,y:32,w:6,h:5},
+    {id:'conviction', x:0,y:37,w:12,h:9},
+    {id:'bottom10',   x:0,y:46,w:12,h:6}
   ],
   TRADER:[
-    {id:'heatmap',    x:0,y:0, w:5,h:9},{id:'tvChart',     x:5,y:0, w:7,h:9},
-    {id:'changes',    x:0,y:9, w:6,h:3},{id:'regime',      x:6,y:9, w:6,h:8},
-    {id:'drillDown',  x:0,y:12,w:6,h:8},
-    {id:'emerging',   x:0,y:20,w:5,h:5},{id:'rotation',    x:5,y:17,w:7,h:9},
-    {id:'conviction', x:0,y:26,w:12,h:9},
-    {id:'pairAnalysis',x:0,y:35,w:6,h:7},{id:'bottom10',  x:6,y:35,w:6,h:6}
+    {id:'aiPulse',    x:0,y:0, w:12,h:4},
+    {id:'heatmap',    x:0,y:4, w:5,h:9},{id:'tvChart',     x:5,y:4, w:7,h:9},
+    {id:'changes',    x:0,y:13,w:6,h:3},{id:'regime',      x:6,y:13,w:6,h:8},
+    {id:'drillDown',  x:0,y:16,w:6,h:8},
+    {id:'emerging',   x:0,y:24,w:5,h:5},{id:'rotation',    x:5,y:21,w:7,h:9},
+    {id:'conviction', x:0,y:30,w:12,h:9},
+    {id:'pairAnalysis',x:0,y:39,w:6,h:7},{id:'bottom10',  x:6,y:39,w:6,h:6}
   ],
   MACRO:[
-    {id:'changes',    x:0,y:0, w:12,h:3},
-    {id:'regime',     x:0,y:3, w:12,h:8},
-    {id:'rotation',   x:0,y:11,w:7,h:9},{id:'pairAnalysis',x:7,y:11,w:5,h:9},
-    {id:'heatmap',    x:0,y:20,w:6,h:8},{id:'emerging',    x:6,y:20,w:6,h:5},
-    {id:'drillDown',  x:6,y:25,w:6,h:8},{id:'tvChart',     x:0,y:28,w:6,h:8},
-    {id:'conviction', x:0,y:36,w:12,h:9},
-    {id:'bottom10',   x:0,y:45,w:12,h:6}
+    {id:'aiPulse',    x:0,y:0, w:12,h:4},
+    {id:'changes',    x:0,y:4, w:12,h:3},
+    {id:'regime',     x:0,y:7, w:12,h:8},
+    {id:'rotation',   x:0,y:15,w:7,h:9},{id:'pairAnalysis',x:7,y:15,w:5,h:9},
+    {id:'heatmap',    x:0,y:24,w:6,h:8},{id:'emerging',    x:6,y:24,w:6,h:5},
+    {id:'drillDown',  x:6,y:29,w:6,h:8},{id:'tvChart',     x:0,y:32,w:6,h:8},
+    {id:'conviction', x:0,y:40,w:12,h:9},
+    {id:'bottom10',   x:0,y:49,w:12,h:6}
   ]
 };
 
@@ -666,6 +675,7 @@ function loadData(){
     try{S.data=JSON.parse(json);}catch(e){S.data=null;}
     S.gridInitialized=false;
     render();
+    if(!S.aiPulse&&!S.aiPulseLoading){setTimeout(function(){generateMarketPulse();},500);}
   }).withFailureHandler(function(err){
     document.getElementById('main').innerHTML='<div class="loader"><div style="color:#ff5555;font-size:13px">⚠ Error loading data</div><div class="loader-txt">'+String(err)+'</div><button class="refresh" onclick="loadData()" style="margin-top:10px;padding:6px 16px;font-size:11px">Try Again</button></div>';
   }).getData();
@@ -732,6 +742,135 @@ function renderAlerts(){
 }
 // ═══════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// AI MARKET PULSE (Sprint 4)
+// ═══════════════════════════════════════════════════════
+var AI_SYSTEM = 'You are a senior ETF rotation strategist analyzing a real-time sector rotation terminal. Write a concise 3-4 paragraph daily briefing. Be specific: cite exact tickers, ranks, percentages, and signals. Professional, direct, no hedging or disclaimers.\n\nStructure: (1) Regime + Breadth health. (2) Sector rotation calls with pair spread evidence. (3) Top picks aligned with regime. (4) Risk flags and playbook reminder.\n\nMax 250 words. Plain text paragraphs only. No headers, no markdown, no bullets, no asterisks.';
+
+function fmtPct(v){if(v==null||isNaN(v))return'--';return(v>=0?'+':'')+(v*100).toFixed(1)+'%';}
+function escHtml(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function buildMarketContext(d){
+  var lines=[];
+  if(d.regime&&d.regime.signals){
+    var v=getVerdict(d.regime.signals);
+    lines.push('REGIME: '+v.label+' | Score: '+d.regime.score+'/7');
+    if(d.regime.verdictFull)lines.push('Full verdict: '+d.regime.verdictFull);
+    if(d.regime.implications){d.regime.implications.forEach(function(imp){if(imp.label&&v.label&&imp.label.toUpperCase().indexOf(v.label.toUpperCase())!==-1)lines.push('Playbook: '+imp.text);});}
+    lines.push('Signals:');
+    d.regime.signals.forEach(function(s){lines.push('  '+s.signal+' ('+s.proxy+'): 1M='+fmtPct(s.delta1m)+' | Trend='+s.trend+' | '+s.verdict);});
+  }
+  if(d.universe&&d.universe.length>0){
+    var qd={LEADING:0,IMPROVING:0,WEAKENING:0,LAGGING:0};
+    d.universe.forEach(function(u){var q=String(u.quadrant||'');if(q.indexOf('LEADING')!==-1)qd.LEADING++;else if(q.indexOf('IMPROVING')!==-1)qd.IMPROVING++;else if(q.indexOf('WEAKENING')!==-1)qd.WEAKENING++;else if(q.indexOf('LAGGING')!==-1)qd.LAGGING++;});
+    var total=d.universe.length;
+    lines.push('BREADTH ('+total+' ETFs): LEADING='+qd.LEADING+' ('+Math.round(qd.LEADING/total*100)+'%) IMPROVING='+qd.IMPROVING+' ('+Math.round(qd.IMPROVING/total*100)+'%) WEAKENING='+qd.WEAKENING+' ('+Math.round(qd.WEAKENING/total*100)+'%) LAGGING='+qd.LAGGING+' ('+Math.round(qd.LAGGING/total*100)+'%)');
+  }
+  if(d.rotation&&d.rotation.creditHealth){
+    lines.push('CREDIT: '+(d.rotation.creditVerdict||''));
+    d.rotation.creditHealth.forEach(function(c){lines.push('  '+c.pair+': d1W='+fmtPct(c.delta1w)+' d1M='+fmtPct(c.delta1m)+' '+c.trend+' '+c.status);});
+  }
+  if(d.sectorMap&&d.sectorMap.sectors){
+    lines.push('SECTOR MAP (11 sectors):');
+    d.sectorMap.sectors.forEach(function(s){lines.push('  '+s.ticker+' '+s.name+': RS='+fmtPct(s.rsVsSpy)+' '+(s.verdict||'')+' Breadth='+(s.breadthStatus||''));});
+  }
+  if(d.conviction&&d.conviction.top){
+    lines.push('TOP 10 CONVICTION:');
+    d.conviction.top.slice(0,10).forEach(function(c){lines.push('  #'+c.rank+' '+c.ticker+' ('+c.category+') RS='+fmtPct(c.composite)+' '+(c.convictionLabel||'')+' '+(c.rotation||'')+' Quad='+c.quadrant);});
+  }
+  if(d.conviction&&d.conviction.bottom){
+    lines.push('BOTTOM 5 (AVOID):');
+    d.conviction.bottom.slice(0,5).forEach(function(c){lines.push('  #'+c.rank+' '+c.ticker+' ('+c.category+') RS='+fmtPct(c.composite)+' '+(c.rotation||''));});
+  }
+  if(d.rotation){
+    if(d.rotation.riskPairs&&d.rotation.riskPairs.length>0){lines.push('RISK PAIRS:');d.rotation.riskPairs.forEach(function(r){lines.push('  '+r.pair+': '+r.status);});}
+    if(d.rotation.sectorSignals&&d.rotation.sectorSignals.length>0){lines.push('SECTOR SIGNALS:');d.rotation.sectorSignals.forEach(function(r){lines.push('  '+(r.pair||r.sector)+': '+(r.status||r.signal));});}
+  }
+  if(d.pairAnalysis){
+    lines.push('PAIR SPREADS:');
+    ['sectorRotation','industryDrillDown','crossAsset','custom'].forEach(function(key){if(d.pairAnalysis[key])d.pairAnalysis[key].forEach(function(p){lines.push('  '+p.num+'/'+p.den+': 3M='+fmtPct(p.spread3m)+' 12M='+fmtPct(p.spread12m));});});
+  }
+  if(d.emerging&&d.emerging.length>0){
+    lines.push('EMERGING (top 5 weekly surge):');
+    d.emerging.slice(0,5).forEach(function(e){lines.push('  '+e.ticker+' ('+e.category+') 1W='+fmtPct(e.rs1w)+' Note='+(e.note||''));});
+  }
+  return lines.join('\n');
+}
+
+function generateMarketPulse(){
+  if(!S.data||S.aiPulseLoading)return;
+  S.aiPulseLoading=true;
+  renderWidgetById('aiPulse');
+  var context=buildMarketContext(S.data);
+  var prompt='Current terminal state. Give me today\'s briefing:\n\n'+context;
+  google.script.run
+    .withSuccessHandler(function(text){S.aiPulse=text;S.aiPulseTime=new Date().toLocaleTimeString();S.aiPulseLoading=false;renderWidgetById('aiPulse');})
+    .withFailureHandler(function(err){S.aiPulse='Failed to generate: '+(err.message||err);S.aiPulseLoading=false;renderWidgetById('aiPulse');})
+    .callClaude(prompt,AI_SYSTEM);
+}
+
+function sendAIChat(){
+  var input=document.getElementById('aiChatInput');
+  if(!input)return;
+  var q=input.value.trim();if(!q)return;
+  S.aiChat.push({role:'user',content:q});
+  S.aiChat.push({role:'assistant',content:'...'});
+  input.value='';
+  renderWidgetById('aiPulse');
+  var context=buildMarketContext(S.data);
+  var prompt='Terminal data:\n'+context+'\n\n';
+  var hist=S.aiChat.slice(0,-1).slice(-4);
+  if(hist.length>0){prompt+='Previous conversation:\n';hist.forEach(function(m){prompt+=(m.role==='user'?'User: ':'Assistant: ')+m.content+'\n';});prompt+='\n';}
+  prompt+='User question: '+q;
+  var chatSys='You are a senior ETF rotation strategist. Answer questions about the terminal data concisely (2-4 sentences) with specific tickers, numbers, and signals. Plain text only. No markdown, no bullets.';
+  google.script.run
+    .withSuccessHandler(function(text){S.aiChat[S.aiChat.length-1]={role:'assistant',content:text};if(S.aiChat.length>6)S.aiChat=S.aiChat.slice(-6);renderWidgetById('aiPulse');})
+    .withFailureHandler(function(err){S.aiChat[S.aiChat.length-1]={role:'assistant',content:'Error: '+(err.message||err)};renderWidgetById('aiPulse');})
+    .callClaude(prompt,chatSys);
+}
+
+function renderAIPulseWidget(bodyEl){
+  if(!bodyEl)return;
+  var h='';
+  h+='<div class="phdr" style="display:flex;align-items:center;justify-content:space-between">';
+  h+='<span>◉ MARKET PULSE <span style="color:#556677;font-weight:400">AI Analysis</span></span>';
+  h+='<div style="display:flex;gap:6px;align-items:center">';
+  if(S.aiPulseTime)h+='<span style="color:#334455;font-size:8px">'+S.aiPulseTime+'</span>';
+  h+='<button class="lt-btn" onclick="generateMarketPulse()" style="font-size:8px;padding:2px 8px">';
+  h+=S.aiPulseLoading?'⟳ Analyzing...':'↻ Generate';
+  h+='</button></div></div>';
+  if(S.aiPulseLoading){
+    h+='<div style="padding:12px 14px;color:#556677;font-size:10px"><span class="ai-loading">Analyzing market data</span></div>';
+  } else if(S.aiPulse){
+    var paras=S.aiPulse.split('\n').filter(function(p){return p.trim().length>0;});
+    h+='<div style="padding:10px 14px">';
+    paras.forEach(function(p){h+='<p style="color:#c8d6e5;font-size:10px;line-height:1.6;margin:0 0 8px 0">'+escHtml(p)+'</p>';});
+    h+='</div>';
+  } else {
+    h+='<div style="padding:16px 14px;text-align:center">';
+    h+='<div style="color:#334455;font-size:10px;margin-bottom:8px">No analysis generated yet</div>';
+    h+='<button class="lt-btn" onclick="generateMarketPulse()" style="color:#00dd88;border-color:#00dd8833;padding:4px 14px;font-size:9px">◉ Generate Market Pulse</button></div>';
+  }
+  h+='<div style="border-top:1px solid #1a2233;padding:6px 14px">';
+  h+='<div style="display:flex;align-items:center;gap:6px">';
+  h+='<input type="text" id="aiChatInput" placeholder="Ask about the data..." ';
+  h+='style="flex:1;background:#0a0e17;border:1px solid #1a2744;border-radius:3px;color:#c8d6e5;padding:5px 8px;font-size:9px;font-family:inherit" ';
+  h+='onkeydown="if(event.key===\'Enter\')sendAIChat()">';
+  h+='<button class="lt-btn" onclick="sendAIChat()" style="padding:4px 10px;font-size:9px">→</button>';
+  h+='</div>';
+  if(S.aiChat.length>0){
+    h+='<div style="margin-top:8px;max-height:200px;overflow-y:auto">';
+    S.aiChat.forEach(function(msg){
+      if(msg.role==='user'){h+='<div style="color:#ff8800;font-size:9px;margin:4px 0 2px;font-weight:600">You: '+escHtml(msg.content)+'</div>';}
+      else{h+='<div style="color:#c8d6e5;font-size:9px;margin:2px 0 6px;line-height:1.5;padding-left:8px;border-left:2px solid #1a2744">'+escHtml(msg.content)+'</div>';}
+    });
+    h+='</div>';
+  }
+  h+='</div>';
+  bodyEl.innerHTML=h;
+}
+
+// ═══════════════════════════════════════════════════════
 // WIDGET RENDER FUNCTIONS (Sprint 3)
 // ═══════════════════════════════════════════════════════
 function renderChangesWidget(bodyEl){
@@ -762,7 +901,7 @@ function renderChangesWidget(bodyEl){
 }
 function renderRegimeWidget(bodyEl){
   var d=S.data; var v=getVerdict(d.regime.signals); var html='';
-  html+='<div class="phdr">STEP 1 — MARKET REGIME <span style="color:#334455;font-weight:400">Should I be aggressive, neutral, or defensive?</span></div>';
+  html+='<div class="phdr">MARKET REGIME <span style="color:#334455;font-weight:400">Should I be aggressive, neutral, or defensive?</span></div>';
   html+='<div style="padding:8px">';
   html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><div style="width:9px;height:9px;border-radius:50%;background:'+v.color+';box-shadow:0 0 8px '+v.color+'"></div><span style="font-size:15px;font-weight:800;color:'+v.color+';letter-spacing:.8px">'+v.label+'</span></div>';
   var regScore=d.regime.score||0;var barW=Math.min(Math.max((regScore*100+50),0),100);
@@ -791,7 +930,7 @@ function renderRegimeWidget(bodyEl){
 }
 function renderHeatmapWidget(bodyEl){
   var d=S.data; var html='';
-  html+='<div class="phdr">STEP 2 — SECTOR CONVICTION HEATMAP <span style="color:#334455;font-weight:400">click to drill down</span></div>';
+  html+='<div class="phdr">SECTOR HEATMAP <span style="color:#334455;font-weight:400">click to drill down</span></div>';
   html+='<div class="heatgrid" id="heatgrid">';
   (d.sectorMap.sectors||[]).forEach(function(s){
     var isActive=S.drillSector===s.ticker;
@@ -861,7 +1000,7 @@ function renderDrillDownWidget(bodyEl){
 }
 function renderRotationWidget(bodyEl){
   var d=S.data; var html='';
-  html+='<div class="phdr">STEP 4 — ROTATION INTELLIGENCE</div>';
+  html+='<div class="phdr">ROTATION INTELLIGENCE</div>';
   html+='<div class="sec-hdr" style="color:#ff8800">▸ RISK REGIME PAIRS — Confirming or Diverging?</div>';
   html+='<table><thead><tr><th>PAIR</th><th>WHAT</th><th class="r">1W</th><th class="r">1M</th><th class="c">TREND</th><th class="r">SIGNAL</th></tr></thead><tbody>';
   (d.rotation.pairs||[]).forEach(function(r){
@@ -913,7 +1052,7 @@ function renderPairAnalysisWidget(bodyEl){
 }
 function renderEmergingWidget(bodyEl){
   var d=S.data; var html='';
-  html+='<div class="phdr">STEP 5 — EMERGING STRENGTH (1W SURGE) <span style="color:#334455;font-weight:400">Who is getting strong NOW?</span></div>';
+  html+='<div class="phdr">EMERGING STRENGTH <span style="color:#334455;font-weight:400">Who is getting strong NOW?</span></div>';
   html+='<table><thead><tr><th>#</th><th>TICKER</th><th>NAME</th><th class="r">RS 1W</th><th class="r">COMP RS</th><th class="r">RK</th><th class="r">NOTE</th></tr></thead><tbody>';
   (d.emerging||[]).slice(0,12).forEach(function(e){
     html+='<tr><td class="dimx">'+e.rank+'</td><td class="tk" style="cursor:pointer" onclick="openProfile(\''+e.ticker+'\')">'+e.ticker+'</td><td class="dim" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+e.name+'</td><td class="r" style="color:#00dd88;font-weight:700">'+pct(e.rs1w)+'</td><td class="r" style="color:'+vc(e.rsComposite)+'">'+pct(e.rsComposite)+'</td><td class="r dimx">'+e.compRank+'</td><td class="r" style="color:'+noteColor(e.note)+';font-size:8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(e.note||'')+'</td></tr>';
@@ -925,7 +1064,7 @@ function renderConvictionWidget(bodyEl){
   var d=S.data; var convData=d.conviction||{};
   var convRows=(convData.top&&convData.top.length)?convData.top:(Array.isArray(d.conviction)&&d.conviction.length)?d.conviction:(d.universe||[]).slice(0,25);
   var html='';
-  html+='<div class="phdr">STEP 3 — TOP 25 HIGH CONVICTION PICKS <span style="color:#334455;font-weight:400">What do I actually trade?</span></div>';
+  html+='<div class="phdr">TOP 25 CONVICTION <span style="color:#334455;font-weight:400">What do I actually trade?</span></div>';
   html+='<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>TICKER</th><th>NAME</th><th>TYPE</th><th>SECTOR</th><th class="r">1W</th><th class="r">1M</th><th class="r">3M</th><th class="r">COMP</th><th class="r">%ILE</th><th class="r">MOM</th><th class="r">ACCEL</th><th class="r">CONVICTION</th><th class="r">ROTATION</th><th class="c">SPARK</th><th class="r">QUAD</th></tr></thead><tbody>';
   convRows.slice(0,25).forEach(function(u,i){
     var bg=i<5?'background:#00dd8808;border-left:2px solid #00dd8844':'';
